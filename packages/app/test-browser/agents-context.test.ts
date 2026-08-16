@@ -98,7 +98,10 @@ function snapshotWithBranches(...infos: AgentRun.Info[]) {
         }),
       ),
     ],
-    active: [...current.active, ...infos.filter((info) => info.state.type === "running" || info.state.type === "retrying")],
+    active: [
+      ...current.active,
+      ...infos.filter((info) => info.state.type === "running" || info.state.type === "retrying"),
+    ],
     history: infos.filter((info) => info.state.type !== "running" && info.state.type !== "retrying"),
   })
 }
@@ -870,9 +873,7 @@ test("refetches a cached snapshot when the context remounts", async () => {
         queryClient,
         fetchSnapshot: async () => {
           requests++
-          return requests === 1
-            ? snapshot()
-            : snapshot(run({ state: { type: "succeeded" }, version: 2 }))
+          return requests === 1 ? snapshot() : snapshot(run({ state: { type: "succeeded" }, version: 2 }))
         },
         events: events(),
         now: () => 3_000,

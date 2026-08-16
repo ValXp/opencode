@@ -102,9 +102,7 @@ describe("RuntimeFlags", () => {
 
   it.effect("enables agent run model summaries via dedicated flag only", () =>
     Effect.gen(function* () {
-      const explicit = yield* readFlags.pipe(
-        Effect.provide(fromConfig({ OPENCODE_AGENT_RUN_MODEL_SUMMARIES: "true" })),
-      )
+      const explicit = yield* readFlags.pipe(Effect.provide(fromConfig({ OPENCODE_AGENT_RUN_MODEL_SUMMARIES: "true" })))
       const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ OPENCODE_EXPERIMENTAL: "true" })))
 
       expect(explicit.agentRunModelSummaries).toBe(true)
