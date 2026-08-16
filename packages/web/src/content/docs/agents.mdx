@@ -139,6 +139,32 @@ Hidden system agent that creates session summaries. It runs automatically and is
 
 ---
 
+## Monitor agent runs
+
+Each delegated subagent execution is recorded as a durable **AgentRun**. An AgentRun ID identifies one execution, while a child Session ID identifies the conversation where the work happens. Resuming an existing child session creates a new AgentRun and can link it to the prior run with `previousRunID`; the run and session IDs are not interchangeable.
+
+The web app shows runs for direct children and nested descendants in the [Agents workspace](/docs/web#agents).
+
+### Statuses
+
+| Status                          | Meaning                                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| **Running** (`running`)         | The run is active.                                                     |
+| **Retrying** (`retrying`)       | The run is waiting for another attempt at the reported time.           |
+| **Succeeded** (`succeeded`)     | The run completed successfully.                                        |
+| **Failed** (`failed`)           | The run ended with the reported error.                                 |
+| **Cancelled** (`cancelled`)     | Cancellation was recorded for the run.                                 |
+| **Interrupted** (`interrupted`) | The run stopped before normal completion, with an optional reason.     |
+| **Unknown** (`unknown`)         | OpenCode cannot prove the run's outcome. The record includes a reason. |
+
+:::caution
+AgentRun records survive a server restart, but process ownership does not. A controlled runtime shutdown records **Interrupted**. After an abrupt process loss, OpenCode leaves the active record unresolved until durable owner liveness and fencing are available; it does not guess that the work succeeded or failed. The public **Unknown** reasons remain `owner_lost`, `legacy_ambiguous`, and `orphaned` for records that can be classified explicitly.
+:::
+
+A run includes a short activity summary derived locally from recent tool and session activity. Set `OPENCODE_AGENT_RUN_MODEL_SUMMARIES=true` to opt into model-generated summaries; those summaries can consume model tokens and incur provider costs. For an active run that has started, freshness is shown separately as **No activity for N** after 60 seconds without activity, calculated from the later of its start or last recorded activity. Queued runs that have not started are not marked inactive. This is an observation, not an authoritative **Stalled** status; use the lifecycle status above to determine the recorded state.
+
+---
+
 ## Configure
 
 You can customize the built-in agents or create your own through configuration. Agents can be configured in two ways:

@@ -54,6 +54,9 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { AgentRun } from "@opencode-ai/core/agent-run"
+import { AgentRunRuntime } from "@/session/agent-run-runtime"
+import { AgentRunSummary } from "@/session/agent-run-summary"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (
@@ -449,6 +452,9 @@ export const node = LayerNode.make({
     MCP.node,
     Database.node,
     Ripgrep.node,
+    AgentRun.node,
+    AgentRunSummary.node,
+    AgentRunRuntime.node,
   ],
 })
 

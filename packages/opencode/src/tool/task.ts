@@ -10,15 +10,21 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Effect, Exit, Schema, Scope } from "effect"
+import { Deferred, Effect, Exit, Schema, Scope, Semaphore } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
+import { AgentRunRuntime } from "@/session/agent-run-runtime"
+import { AgentV2 } from "@opencode-ai/core/agent"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { AgentRun } from "@opencode-ai/core/agent-run"
+import { Provider } from "@/provider/provider"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
-  prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts>
+  prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts, unknown>
 }
 
 const id = "task"
@@ -65,17 +71,47 @@ function renderOutput(input: {
   sessionID: SessionID
   state: "running" | "completed" | "error"
   summary?: string
-  text: string
+  text?: string
 }) {
   const tag = input.state === "error" ? "task_error" : "task_result"
   return [
     `<task id="${input.sessionID}" state="${input.state}">`,
     ...(input.summary ? [`<summary>${input.summary}</summary>`] : []),
-    `<${tag}>`,
-    input.text,
-    `</${tag}>`,
+    ...(input.text === undefined ? [] : [`<${tag}>`, input.text, `</${tag}>`]),
     "</task>",
   ].join("\n")
+}
+
+function replayResult(run: AgentRun.Info) {
+  const state =
+    run.state.type === "running" || run.state.type === "retrying"
+      ? "running"
+      : run.state.type === "succeeded"
+        ? "completed"
+        : "error"
+  return {
+    title: run.description,
+    metadata: {
+      parentSessionId: run.callerSessionID,
+      sessionId: run.sessionID,
+      ...(run.model ? { model: { modelID: run.model.id, providerID: run.model.providerID } } : {}),
+      runId: run.id,
+      ...(run.background ? { background: true, jobId: run.sessionID } : {}),
+    },
+    output: renderOutput({ sessionID: run.sessionID, state }),
+  }
+}
+
+function isTaskPromptOps(input: unknown): input is TaskPromptOps {
+  if (typeof input !== "object" || input === null) return false
+  return (
+    "cancel" in input &&
+    typeof input.cancel === "function" &&
+    "resolvePromptParts" in input &&
+    typeof input.resolvePromptParts === "function" &&
+    "prompt" in input &&
+    typeof input.prompt === "function"
+  )
 }
 
 export const TaskTool = Tool.define(
@@ -88,11 +124,23 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const agentRuns = yield* AgentRunRuntime.Service
+    const provider = yield* Provider.Service
+    const admissionLock = Semaphore.makeUnsafe(1)
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      const ops = ctx.extra?.promptOps
+      if (!isTaskPromptOps(ops)) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
+      const source = {
+        messageID: SessionMessage.ID.make(ctx.messageID),
+        callID: ctx.callID ?? MessageID.ascending(),
+      }
+      const existing = yield* agentRuns.findBySource({ callerSessionID: ctx.sessionID, source })
+      if (existing) return replayResult(existing)
+
       const cfg = yield* config.get()
       const runInBackground = params.background === true
       if (runInBackground && !flags.experimentalBackgroundSubagents) {
@@ -102,13 +150,8 @@ export const TaskTool = Tool.define(
       }
 
       const parent = yield* sessions.get(ctx.sessionID)
-      let current = parent
-      let depth = 0
-      while (current.parentID) {
-        depth++
-        current = yield* sessions.get(current.parentID)
-      }
-      if (depth >= (cfg.subagent_depth ?? 1)) {
+      const callerLineage = yield* sessionLineage(sessions, parent, "caller")
+      if (callerLineage.depth >= (cfg.subagent_depth ?? 1)) {
         return yield* Effect.fail(
           new Error(
             `Subagent depth limit reached (${cfg.subagent_depth ?? 1}). Increase "subagent_depth" to allow nested subagents.`,
@@ -133,9 +176,26 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
-      const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
+      const session = params.task_id ? yield* sessions.get(SessionID.make(params.task_id)) : undefined
+      if (session && !session.parentID) {
+        return yield* Effect.fail(new Error("task_id must reference a non-root child session"))
+      }
+      if (session) {
+        const taskLineage = yield* sessionLineage(sessions, session, "task_id")
+        if (taskLineage.root.id !== callerLineage.root.id) {
+          return yield* Effect.fail(new Error("task_id belongs to a different root session"))
+        }
+      }
+      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+        Effect.provideService(Database.Service, database),
+        Effect.orDie,
+      )
+      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+      const variant = msg.info.variant
+      const model = next.model ?? {
+        modelID: msg.info.modelID,
+        providerID: msg.info.providerID,
+      }
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
@@ -170,59 +230,52 @@ export const TaskTool = Tool.define(
             ),
           ],
         }))
-
-      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
-        Effect.provideService(Database.Service, database),
-        Effect.orDie,
-      )
-      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
-      const variant = msg.info.variant
-
-      const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
-      const metadata = {
-        parentSessionId: ctx.sessionID,
-        sessionId: nextSession.id,
-        model,
-        ...(runInBackground ? { background: true } : {}),
-      }
-
       yield* ctx.metadata({
         title: params.description,
-        metadata,
+        metadata: {
+          parentSessionId: ctx.sessionID,
+          sessionId: nextSession.id,
+          model,
+          ...(runInBackground ? { background: true, jobId: nextSession.id } : {}),
+        },
       })
+      const summaryModel = flags.agentRunModelSummaries
+        ? yield* provider.getModel(model.providerID, model.modelID)
+        : undefined
 
-      const ops = ctx.extra?.promptOps as TaskPromptOps
-      if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
-
-      const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
-        const result = yield* ops.prompt({
-          messageID: MessageID.ascending(),
+      const runTask = Effect.fn("TaskTool.runTask")((runID: AgentRun.ID) =>
+        agentRuns.execute({
+          id: runID,
           sessionID: nextSession.id,
-          model: {
-            modelID: model.modelID,
-            providerID: model.providerID,
-          },
-          variant: next.model ? undefined : variant,
-          agent: next.name,
-          parts,
-        })
-        if (result.info.role === "assistant" && result.info.error) {
-          const message =
-            "message" in result.info.error.data && typeof result.info.error.data.message === "string"
-              ? result.info.error.data.message
-              : result.info.error.name
-          return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${message}`))
-        }
-        const failed = result.parts.findLast((item) => item.type === "tool" && item.state.status === "error")
-        if (failed?.type === "tool" && failed.state.status === "error") {
-          return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${failed.state.error}`))
-        }
-        return result.parts.findLast((item) => item.type === "text")?.text ?? ""
-      })
+          model: summaryModel,
+          effect: Effect.gen(function* () {
+            const parts = yield* ops.resolvePromptParts(params.prompt)
+            const result = yield* ops.prompt({
+              messageID: MessageID.ascending(),
+              sessionID: nextSession.id,
+              model: {
+                modelID: model.modelID,
+                providerID: model.providerID,
+              },
+              variant: next.model ? undefined : variant,
+              agent: next.name,
+              parts,
+            })
+            if (result.info.role === "assistant" && result.info.error) {
+              const message =
+                "message" in result.info.error.data && typeof result.info.error.data.message === "string"
+                  ? result.info.error.data.message
+                  : result.info.error.name
+              return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${message}`))
+            }
+            const failed = result.parts.findLast((item) => item.type === "tool" && item.state.status === "error")
+            if (failed?.type === "tool" && failed.state.status === "error") {
+              return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${failed.state.error}`))
+            }
+            return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+          }).pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))),
+        }),
+      )
 
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error",
@@ -264,7 +317,101 @@ export const TaskTool = Tool.define(
         )
       })
 
-      if (yield* background.extend({ id: nextSession.id, run: runTask() })) {
+      const claim = yield* admissionLock.withPermit(
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            const replay = yield* agentRuns.findBySource({ callerSessionID: ctx.sessionID, source })
+            if (replay) {
+              if (!session) yield* sessions.remove(nextSession.id)
+              return { type: "replayed" as const, info: replay }
+            }
+
+            const ready = yield* Deferred.make<AgentRun.ID, unknown>()
+            const extended = yield* background.extend({
+              id: nextSession.id,
+              run: Deferred.await(ready).pipe(Effect.flatMap(runTask)),
+            })
+            const admitted = yield* agentRuns
+              .admit({
+                sessionID: nextSession.id,
+                callerSessionID: ctx.sessionID,
+                source,
+                agent: AgentV2.ID.make(next.name),
+                description: params.description,
+                model: {
+                  id: model.modelID,
+                  providerID: model.providerID,
+                  ...(!next.model && variant ? { variant: ModelV2.VariantID.make(variant) } : {}),
+                },
+                background: runInBackground || extended,
+              })
+              .pipe(
+                Effect.tapCause((cause) =>
+                  extended ? Deferred.failCause(ready, cause).pipe(Effect.asVoid) : Effect.void,
+                ),
+              )
+            if (!admitted.created) {
+              if (extended) {
+                const error = new Error("AgentRun admission raced after reserving a background extension")
+                yield* Deferred.fail(ready, error)
+                return yield* Effect.fail(error)
+              }
+              if (!session) yield* sessions.remove(nextSession.id)
+              return { type: "replayed" as const, info: admitted.info }
+            }
+
+            const metadata = {
+              parentSessionId: ctx.sessionID,
+              sessionId: nextSession.id,
+              model,
+              runId: admitted.info.id,
+              ...(admitted.info.background ? { background: true, jobId: nextSession.id } : {}),
+            }
+            if (extended) {
+              yield* Deferred.succeed(ready, admitted.info.id)
+            } else {
+              yield* background
+                .start({
+                  id: nextSession.id,
+                  type: id,
+                  title: params.description,
+                  metadata,
+                  onPromote: Effect.all([
+                    ctx.metadata({
+                      title: params.description,
+                      metadata: { ...metadata, background: true, jobId: nextSession.id },
+                    }),
+                    notify(nextSession.id),
+                  ]),
+                  run: runTask(admitted.info.id),
+                })
+                .pipe(
+                  Effect.onError((cause) =>
+                    agentRuns.fail(admitted.info.id, cause).pipe(
+                      Effect.andThen(
+                        background.cancel(nextSession.id).pipe(
+                          Effect.asVoid,
+                          Effect.catchCause((cancelCause) =>
+                            Effect.logWarning("failed to cancel agent run after scheduling failure", {
+                              runID: admitted.info.id,
+                              cause: cancelCause,
+                            }),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+            }
+            yield* ctx.metadata({ title: params.description, metadata })
+            return { type: "admitted" as const, admitted, extended, metadata }
+          }),
+        ),
+      )
+      if (claim.type === "replayed") return replayResult(claim.info)
+
+      const metadata = claim.metadata
+      if (claim.extended) {
         return {
           title: params.description,
           metadata: {
@@ -281,28 +428,13 @@ export const TaskTool = Tool.define(
         }
       }
 
-      const info = yield* background.start({
-        id: nextSession.id,
-        type: id,
-        title: params.description,
-        metadata,
-        onPromote: Effect.all([
-          ctx.metadata({
-            title: params.description,
-            metadata: { ...metadata, background: true, jobId: nextSession.id },
-          }),
-          notify(nextSession.id),
-        ]),
-        run: runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))),
-      })
-
       function backgroundResult() {
         return {
           title: params.description,
           metadata: {
             ...metadata,
             background: true,
-            jobId: info.id,
+            jobId: nextSession.id,
           },
           output: renderOutput({
             sessionID: nextSession.id,
@@ -314,7 +446,7 @@ export const TaskTool = Tool.define(
       }
 
       if (runInBackground) {
-        yield* notify(info.id)
+        yield* notify(nextSession.id)
         return backgroundResult()
       }
 
@@ -346,8 +478,10 @@ export const TaskTool = Tool.define(
           }),
         (_, exit) =>
           Effect.gen(function* () {
-            if (Exit.hasInterrupts(exit))
-              yield* Effect.all([cancel, background.cancel(nextSession.id)], { discard: true })
+            if (Exit.hasInterrupts(exit)) {
+              yield* cancel
+              yield* background.cancel(nextSession.id)
+            }
           }).pipe(
             Effect.ensuring(
               Effect.sync(() => {
@@ -369,3 +503,18 @@ export const TaskTool = Tool.define(
     }
   }),
 )
+
+function sessionLineage(
+  sessions: Session.Interface,
+  current: Session.Info,
+  label: "caller" | "task_id",
+  visited: ReadonlySet<SessionID> = new Set(),
+): Effect.Effect<{ root: Session.Info; depth: number }, Error | Session.NotFound> {
+  if (visited.has(current.id)) {
+    return Effect.fail(new Error(`${label} session parent cycle detected at ${current.id}`))
+  }
+  if (!current.parentID) return Effect.succeed({ root: current, depth: visited.size })
+  return sessions
+    .get(current.parentID)
+    .pipe(Effect.flatMap((parent) => sessionLineage(sessions, parent, label, new Set(visited).add(current.id))))
+}

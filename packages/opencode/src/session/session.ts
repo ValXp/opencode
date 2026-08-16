@@ -44,6 +44,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { AgentRunControl } from "./agent-run-control"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -486,7 +487,7 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | AgentRunControl.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -495,6 +496,7 @@ const layer: Layer.Layer<
     const background = yield* BackgroundJob.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const agentRuns = yield* AgentRunControl.Service
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
       id?: SessionID
@@ -606,6 +608,7 @@ const layer: Layer.Layer<
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
       const session = yield* get(sessionID)
       try {
+        yield* agentRuns.cancelTree(sessionID)
         // `remove` needs to work in all cases, such as broken sessions that
         // run cleanup without instance state.
         const hasInstance = yield* InstanceState.directory.pipe(
@@ -1010,7 +1013,7 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, AgentRunControl.node],
 })
 
 export * as Session from "./session"

@@ -295,6 +295,12 @@ const layer = Layer.effect(
             subagent_type: task.agent,
             command: task.command,
           },
+          title: task.description,
+          metadata: {
+            parentSessionId: sessionID,
+            sessionId: assistantMessage.sessionID,
+            model: task.model ?? { providerID: taskModel.providerID, modelID: taskModel.id },
+          },
           time: { start: Date.now() },
         },
       })

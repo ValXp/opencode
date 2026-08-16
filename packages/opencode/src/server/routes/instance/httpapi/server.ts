@@ -115,6 +115,9 @@ import { corsVaryFix } from "./middleware/cors-vary"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
+import { AgentRun } from "@opencode-ai/core/agent-run"
+import { AgentRunRuntime } from "@/session/agent-run-runtime"
+import { AgentRunSummary } from "@/session/agent-run-summary"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -213,6 +216,9 @@ const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
+  AgentRun.node,
+  AgentRunSummary.node,
+  AgentRunRuntime.node,
   Auth.node,
   Account.node,
   Config.node,

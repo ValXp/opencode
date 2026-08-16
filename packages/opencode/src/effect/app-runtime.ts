@@ -54,12 +54,18 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { AgentRun } from "@opencode-ai/core/agent-run"
+import { AgentRunRuntime } from "@/session/agent-run-runtime"
+import { AgentRunSummary } from "@/session/agent-run-summary"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
     Npm.node,
     FSUtil.node,
     Database.node,
+    AgentRun.node,
+    AgentRunSummary.node,
+    AgentRunRuntime.node,
     Auth.node,
     Account.node,
     Config.node,

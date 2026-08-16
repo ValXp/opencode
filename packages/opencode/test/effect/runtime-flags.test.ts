@@ -52,6 +52,7 @@ describe("RuntimeFlags", () => {
       expect(flags.enableQuestionTool).toBe(true)
       expect(flags.experimentalReferences).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
+      expect(flags.agentRunModelSummaries).toBe(false)
       expect(flags.experimentalLspTy).toBe(false)
       expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalOxfmt).toBe(true)
@@ -96,6 +97,18 @@ describe("RuntimeFlags", () => {
 
       expect(explicit.experimentalWebSockets).toBe(true)
       expect(umbrella.experimentalWebSockets).toBe(false)
+    }),
+  )
+
+  it.effect("enables agent run model summaries via dedicated flag only", () =>
+    Effect.gen(function* () {
+      const explicit = yield* readFlags.pipe(
+        Effect.provide(fromConfig({ OPENCODE_AGENT_RUN_MODEL_SUMMARIES: "true" })),
+      )
+      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ OPENCODE_EXPERIMENTAL: "true" })))
+
+      expect(explicit.agentRunModelSummaries).toBe(true)
+      expect(umbrella.agentRunModelSummaries).toBe(false)
     }),
   )
 
