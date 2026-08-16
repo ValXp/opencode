@@ -1,6 +1,7 @@
 import { Config } from "@/config/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
+import { EventManifest } from "@/event-manifest"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
@@ -18,7 +19,7 @@ function eventData(data: unknown): Sse.Event {
     _tag: "Event",
     event: "message",
     id: undefined,
-    data: JSON.stringify(data),
+    data: JSON.stringify(EventManifest.encodeLegacyWireEvent(data)),
   }
 }
 

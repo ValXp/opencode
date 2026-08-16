@@ -1,6 +1,7 @@
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { GlobalBus } from "@/bus/global"
+import { EventManifest } from "@/event-manifest"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Effect, Queue } from "effect"
 import * as Stream from "effect/Stream"
@@ -14,7 +15,7 @@ function eventData(data: unknown): Sse.Event {
     _tag: "Event",
     event: "message",
     id: undefined,
-    data: JSON.stringify(data),
+    data: JSON.stringify(EventManifest.encodeLegacyWireEvent(data)),
   }
 }
 
