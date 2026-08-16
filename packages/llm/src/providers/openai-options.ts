@@ -1,14 +1,23 @@
 import type { ProviderOptions, ReasoningEffort, TextVerbosity } from "../schema"
 import { mergeProviderOptions } from "../schema"
-import type { OpenAIResponseIncludable, OpenAIServiceTier } from "../protocols/utils/openai-options"
+import type {
+  OpenAIReasoningMode,
+  OpenAIResponseIncludable,
+  OpenAIServiceTier,
+} from "../protocols/utils/openai-options"
 
-export type { OpenAIResponseIncludable, OpenAIServiceTier } from "../protocols/utils/openai-options"
+export type {
+  OpenAIReasoningMode,
+  OpenAIResponseIncludable,
+  OpenAIServiceTier,
+} from "../protocols/utils/openai-options"
 
 export interface OpenAIOptionsInput {
   readonly [key: string]: unknown
   readonly store?: boolean
   readonly promptCacheKey?: string
   readonly reasoningEffort?: ReasoningEffort
+  readonly reasoningMode?: OpenAIReasoningMode
   readonly reasoningSummary?: "auto"
   // OpenAI Responses `include` wire field. Mirrors the official SDK's
   // `ResponseIncludable[]` union exactly so AI SDK callers and direct
@@ -31,6 +40,7 @@ const openAIProviderOptions = (options: OpenAIOptionsInput | undefined): Provide
       store: options?.store,
       promptCacheKey: options?.promptCacheKey,
       reasoningEffort: options?.reasoningEffort,
+      reasoningMode: options?.reasoningMode,
       reasoningSummary: options?.reasoningSummary,
       include: options?.include,
       textVerbosity: options?.textVerbosity,

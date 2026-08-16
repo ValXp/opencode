@@ -6,6 +6,10 @@ export const OpenAIReasoningEfforts = ReasoningEfforts.filter(
   (effort): effort is Exclude<ReasoningEffort, "max"> => effort !== "max",
 )
 export type OpenAIReasoningEffort = (typeof OpenAIReasoningEfforts)[number]
+export const OpenAIResponsesReasoningEfforts = ReasoningEfforts
+export type OpenAIResponsesReasoningEffort = (typeof OpenAIResponsesReasoningEfforts)[number]
+export const OpenAIReasoningModes = ["standard", "pro"] as const
+export type OpenAIReasoningMode = (typeof OpenAIReasoningModes)[number]
 
 // Mirrors OpenAI's `ResponseIncludable` union from the official SDK. Keep this
 // in lockstep with `openai-node/src/resources/responses/responses.ts`.
@@ -30,6 +34,8 @@ const INCLUDABLES = new Set<string>(OpenAIResponseIncludables)
 const SERVICE_TIERS = new Set<string>(OpenAIServiceTiers)
 
 export const OpenAIReasoningEffort = Schema.Literals(OpenAIReasoningEfforts)
+export const OpenAIResponsesReasoningEffort = Schema.Literals(OpenAIResponsesReasoningEfforts)
+export const OpenAIReasoningMode = Schema.Literals(OpenAIReasoningModes)
 export const OpenAITextVerbosity = TextVerbosity
 export const OpenAIResponseIncludable = Schema.Literals(OpenAIResponseIncludables)
 export const OpenAIServiceTier = Schema.Literals(OpenAIServiceTiers)
@@ -57,6 +63,11 @@ export const reasoningEffort = (request: LLMRequest): ReasoningEffort | undefine
 
 export const reasoningSummary = (request: LLMRequest): "auto" | undefined =>
   options(request)?.reasoningSummary === "auto" ? "auto" : undefined
+
+export const reasoningMode = (request: LLMRequest): OpenAIReasoningMode | undefined => {
+  const value = options(request)?.reasoningMode
+  return OpenAIReasoningModes.find((mode) => mode === value)
+}
 
 // Resolve the OpenAI Responses `include` field. Filters out unknown
 // includable values defensively so a typo in upstream config drops the

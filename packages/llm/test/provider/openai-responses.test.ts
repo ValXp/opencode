@@ -550,12 +550,13 @@ describe("OpenAI Responses route", () => {
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
         LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).model("gpt-5.2"),
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).model("gpt-5.6-sol"),
           prompt: "think",
           providerOptions: {
             openai: {
               promptCacheKey: "session_123",
-              reasoningEffort: "high",
+              reasoningEffort: "max",
+              reasoningMode: "pro",
               reasoningSummary: "auto",
               include: ["reasoning.encrypted_content"],
             },
@@ -566,7 +567,7 @@ describe("OpenAI Responses route", () => {
       expect(prepared.body.store).toBe(false)
       expect(prepared.body.prompt_cache_key).toBe("session_123")
       expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
-      expect(prepared.body.reasoning).toEqual({ effort: "high", summary: "auto" })
+      expect(prepared.body.reasoning).toEqual({ effort: "max", mode: "pro", summary: "auto" })
       expect(prepared.body.text).toEqual({ verbosity: "low" })
     }),
   )

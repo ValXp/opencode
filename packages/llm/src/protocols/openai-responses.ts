@@ -135,7 +135,8 @@ const OpenAIResponsesCoreFields = {
   include: optionalArray(OpenAIOptions.OpenAIResponseIncludable),
   reasoning: Schema.optional(
     Schema.Struct({
-      effort: Schema.optional(OpenAIOptions.OpenAIReasoningEffort),
+      effort: Schema.optional(OpenAIOptions.OpenAIResponsesReasoningEffort),
+      mode: Schema.optional(OpenAIOptions.OpenAIReasoningMode),
       summary: Schema.optional(Schema.Literal("auto")),
     }),
   ),
@@ -250,8 +251,6 @@ interface ReasoningStreamItem {
   // and matches the wire field.
   readonly summaryParts: Readonly<Record<number, ReasoningSummaryStatus>>
 }
-
-const invalid = ProviderShared.invalidRequest
 
 // =============================================================================
 // Request Lowering
@@ -453,12 +452,11 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
     : input
 })
 
-const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (request: LLMRequest) {
+const lowerOptions = (request: LLMRequest) => {
   const store = OpenAIOptions.store(request)
   const promptCacheKey = OpenAIOptions.promptCacheKey(request)
   const effort = OpenAIOptions.reasoningEffort(request)
-  if (effort && !OpenAIOptions.isReasoningEffort(effort))
-    return yield* invalid(`OpenAI Responses does not support reasoning effort ${effort}`)
+  const mode = OpenAIOptions.reasoningMode(request)
   const summary = OpenAIOptions.reasoningSummary(request)
   const include = OpenAIOptions.include(request)
   const verbosity = OpenAIOptions.textVerbosity(request)
@@ -469,15 +467,15 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
     ...(store !== undefined ? { store } : {}),
     ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(include ? { include } : {}),
-    ...(effort || summary ? { reasoning: { effort, summary } } : {}),
+    ...(effort || mode || summary ? { reasoning: { effort, mode, summary } } : {}),
     ...(verbosity ? { text: { verbosity } } : {}),
     ...(serviceTier ? { service_tier: serviceTier } : {}),
   }
-})
+}
 
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
   const generation = request.generation
-  const options = yield* lowerOptions(request)
+  const options = lowerOptions(request)
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   return {
     model: request.model.id,

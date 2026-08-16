@@ -107,6 +107,20 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
+  it.effect("rejects Responses-only max reasoning effort", () =>
+    Effect.gen(function* () {
+      const error = yield* LLMClient.prepare(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).chat("gpt-5.6-sol"),
+          prompt: "think",
+          providerOptions: { openai: { reasoningEffort: "max" } },
+        }),
+      ).pipe(Effect.flip)
+
+      expect(error.message).toContain("OpenAI Chat does not support reasoning effort max")
+    }),
+  )
+
   it.effect("adds native query params to the Chat Completions URL", () =>
     LLMClient.generate(
       LLM.updateRequest(request, {
