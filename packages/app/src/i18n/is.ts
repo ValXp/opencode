@@ -1,5 +1,5 @@
 import { DESKTOP_NATIVE_KEYS } from "./desktop-native"
-import { AGENT_RUN_ENGLISH } from "./agent-run"
+import { FEATURE_ENGLISH_FALLBACK } from "./feature-fallback"
 
 const desktop = [
   "OpenCode",
@@ -95,7 +95,7 @@ const desktop = [
 ]
 
 export const dict = {
-  ...AGENT_RUN_ENGLISH,
+  ...FEATURE_ENGLISH_FALLBACK,
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Tillögur",
   "command.category.view": "Skoða",

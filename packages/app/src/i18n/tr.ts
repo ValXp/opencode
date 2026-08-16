@@ -2,10 +2,10 @@ import { dict as en } from "./en"
 
 type Keys = keyof typeof en
 
-import { AGENT_RUN_ENGLISH } from "./agent-run"
+import { FEATURE_ENGLISH_FALLBACK } from "./feature-fallback"
 
 export const dict = {
-  ...AGENT_RUN_ENGLISH,
+  ...FEATURE_ENGLISH_FALLBACK,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Dosya",
   "desktop.menu.edit": "Düzen",

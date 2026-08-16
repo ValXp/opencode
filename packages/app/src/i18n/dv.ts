@@ -1,7 +1,7 @@
-import { AGENT_RUN_ENGLISH } from "./agent-run"
+import { FEATURE_ENGLISH_FALLBACK } from "./feature-fallback"
 
 export const dict = {
-  ...AGENT_RUN_ENGLISH,
+  ...FEATURE_ENGLISH_FALLBACK,
   "desktop.menu.app": "OpenCode އެވެ",
   "desktop.menu.file": "ފައިލް",
   "desktop.menu.edit": "ބަދަލު ގެނައުން",

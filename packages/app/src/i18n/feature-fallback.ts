@@ -1,4 +1,4 @@
-export const AGENT_RUN_ENGLISH = {
+export const FEATURE_ENGLISH_FALLBACK = {
   "settings.general.row.powerSavings.title": "Power saving mode",
   "settings.general.row.powerSavings.description":
     "Reduces GPU-heavy visual effects and background rendering activity in the browser.",
