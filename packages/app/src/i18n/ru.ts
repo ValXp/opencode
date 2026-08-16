@@ -922,6 +922,9 @@ export const dict = {
     "Выберите оболочку для терминала. Совместимые оболочки также используются агентом при вызове инструментов.",
   "settings.general.row.shell.autoDefault": "Авто (по умолчанию)",
   "settings.general.row.shell.terminalOnly": "только терминал",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "Внешний вид",
   "settings.general.row.appearance.description": "Настройте внешний вид OpenCode на вашем устройстве",
   "settings.general.row.colorScheme.title": "Цветовая схема",

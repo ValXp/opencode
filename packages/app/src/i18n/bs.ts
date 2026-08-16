@@ -920,6 +920,9 @@ export const dict = {
     "Odaberi shell koji se koristi za terminal. Kompatibilni shellovi koriste se i za pozive alata agenta.",
   "settings.general.row.shell.autoDefault": "Automatski (podrazumijevano)",
   "settings.general.row.shell.terminalOnly": "samo terminal",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "Izgled",
   "settings.general.row.appearance.description": "Prilagodi kako OpenCode izgleda na tvom uređaju",
   "settings.general.row.colorScheme.title": "Šema boja",

@@ -12,6 +12,8 @@ import { useSDK } from "@/context/sdk"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useServerSDK } from "@/context/server-sdk"
+import { useSettings } from "@/context/settings"
+import { powerSavingsMotionDuration } from "@/context/power-savings"
 import { ScopedKey } from "@/utils/server-scope"
 
 const cache = new Map<string, { tab: number; answers: QuestionAnswer[]; custom: string[]; customOn: boolean[] }>()
@@ -65,6 +67,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const sdk = useSDK()
   const serverSDK = useServerSDK()
   const language = useLanguage()
+  const settings = useSettings()
   const cacheKey = ScopedKey.from(serverSDK().scope, props.request.id)
 
   const questions = createMemo(() => props.request.questions)
@@ -104,7 +107,10 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const customPlaceholder = () => language.t("ui.question.custom.placeholder")
 
   const last = createMemo(() => store.tab >= total() - 1)
-  const collapse = useSpring(() => (store.minimized ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
+  const collapse = useSpring(
+    () => (store.minimized ? 1 : 0),
+    () => ({ visualDuration: powerSavingsMotionDuration(settings.general.powerSavings(), 0.3), bounce: 0 }),
+  )
   const hidden = createMemo(() => Math.max(0, Math.min(1, collapse())))
   const optionsOff = createMemo(() => hidden() > 0.98)
 

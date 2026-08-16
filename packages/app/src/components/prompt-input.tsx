@@ -50,6 +50,8 @@ import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { powerSavingsMotionDuration, powerSavingsScrollBehavior } from "@/context/power-savings"
+import { useSettings } from "@/context/settings"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
 import { createPromptAttachments } from "./prompt-input/attachments"
@@ -127,6 +129,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const permission = usePermission()
   const language = useLanguage()
   const platform = usePlatform()
+  const settings = useSettings()
   const tabs = () => props.controls.session.tabs
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
@@ -261,7 +264,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     () => prompt.capture(),
     Math.floor(Math.random() * EXAMPLES.length),
   )
-  const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
+  const buttonsSpring = useSpring(
+    () => (store.mode === "normal" ? 1 : 0),
+    () => ({ visualDuration: powerSavingsMotionDuration(settings.general.powerSavings(), 0.2), bounce: 0 }),
+  )
   const motion = (value: number) => ({
     opacity: value,
     transform: `scale(${0.98 + value * 0.02})`,
@@ -824,7 +830,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     requestAnimationFrame(() => {
       const element = slashPopoverRef.querySelector(`[data-slash-id="${activeId}"]`)
-      element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      element?.scrollIntoView({
+        block: "nearest",
+        behavior: powerSavingsScrollBehavior(settings.general.powerSavings()),
+      })
     })
   }
   const selectPopoverActive = () => {

@@ -903,6 +903,9 @@ export const dict = {
   "settings.general.row.shell.description": "选择终端使用的 shell。兼容的 shell 也会用于智能体工具调用。",
   "settings.general.row.shell.autoDefault": "自动（默认）",
   "settings.general.row.shell.terminalOnly": "仅终端",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "外观",
   "settings.general.row.appearance.description": "自定义 OpenCode 在你的设备上的外观",
   "settings.general.row.colorScheme.title": "配色方案",

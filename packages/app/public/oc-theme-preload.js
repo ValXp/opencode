@@ -1,4 +1,11 @@
 ;(function () {
+  try {
+    var settings = JSON.parse(localStorage.getItem("settings.v3") || "null")
+    if (location.protocol !== "oc:" && settings && settings.general && settings.general.powerSavings === true) {
+      document.documentElement.setAttribute("data-power-savings", "")
+    }
+  } catch {}
+
   var key = "opencode-theme-id"
   var themeId = localStorage.getItem(key) || "oc-2"
 

@@ -1026,6 +1026,9 @@ export const dict = {
     "터미널에서 사용할 셸을 선택하세요. 호환되는 셸은 에이전트 도구 호출에도 사용됩니다.",
   "settings.general.row.shell.autoDefault": "자동 (기본값)",
   "settings.general.row.shell.terminalOnly": "터미널 전용",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.showFileTree.title": "파일 트리",
   "settings.general.row.showFileTree.description": "세션에 파일 트리 패널 표시",
   "settings.general.row.showNavigation.title": "탐색 컨트롤",

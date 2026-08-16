@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -134,7 +134,9 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
                 class="w-full h-full object-cover"
               />
             ) : (
-              <video src={feature()!.media!.src} autoplay loop muted playsinline class="w-full h-full object-cover" />
+              <Show when={!settings.general.powerSavings()}>
+                <video src={feature()!.media!.src} autoplay loop muted playsinline class="w-full h-full object-cover" />
+              </Show>
             )}
           </div>
         )}

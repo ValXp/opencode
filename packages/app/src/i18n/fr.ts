@@ -860,6 +860,9 @@ export const dict = {
     "Choisissez le shell utilisé par votre terminal. Les shells compatibles sont également utilisés pour les appels d'outils de l'agent.",
   "settings.general.row.shell.autoDefault": "Automatique (par défaut)",
   "settings.general.row.shell.terminalOnly": "terminal uniquement",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "Apparence",
   "settings.general.row.appearance.description": "Personnaliser l'apparence d'OpenCode sur votre appareil",
   "settings.general.row.colorScheme.title": "Schéma de couleurs",

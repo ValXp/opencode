@@ -8,7 +8,9 @@ beforeEach(() => {
   document.head.innerHTML = ""
   document.documentElement.removeAttribute("data-theme")
   document.documentElement.removeAttribute("data-color-scheme")
+  document.documentElement.removeAttribute("data-power-savings")
   localStorage.clear()
+  window.history.replaceState(undefined, "", "/")
   Object.defineProperty(window, "matchMedia", {
     value: () =>
       ({
@@ -19,6 +21,30 @@ beforeEach(() => {
 })
 
 describe("theme preload", () => {
+  test("restores power saving mode before mount", () => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { powerSavings: true } }))
+
+    run()
+
+    expect(document.documentElement.hasAttribute("data-power-savings")).toBe(true)
+  })
+
+  test("does not restore browser power saving mode in the desktop renderer", () => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { powerSavings: true } }))
+    window.history.replaceState(undefined, "", "oc://renderer/index.html")
+
+    run()
+
+    expect(document.documentElement.hasAttribute("data-power-savings")).toBe(false)
+  })
+
+  test("ignores invalid settings while preloading", () => {
+    localStorage.setItem("settings.v3", "{")
+
+    expect(run).not.toThrow()
+    expect(document.documentElement.hasAttribute("data-power-savings")).toBe(false)
+  })
+
   test("migrates legacy oc-1 to oc-2 before mount", () => {
     localStorage.setItem("opencode-theme-id", "oc-1")
     localStorage.setItem("opencode-theme-css-light", "--background-base:#fff;")

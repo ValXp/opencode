@@ -12,6 +12,7 @@ import { Dynamic } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import { powerSavingsMotionDuration } from "@/context/power-savings"
 
 const doneToken = "\u0000done\u0000"
 const totalToken = "\u0000total\u0000"
@@ -73,7 +74,10 @@ export function SessionTodoDock(props: {
   )
 
   const preview = createMemo(() => active()?.content ?? "")
-  const collapse = useSpring(() => (props.collapsed ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
+  const collapse = useSpring(
+    () => (props.collapsed ? 1 : 0),
+    () => ({ visualDuration: powerSavingsMotionDuration(settings.general.powerSavings(), 0.3), bounce: 0 }),
+  )
   const dock = createMemo(() => Math.max(0, Math.min(1, props.dockProgress)))
   const shut = createMemo(() => 1 - dock())
   const value = createMemo(() => Math.max(0, Math.min(1, collapse())))
@@ -209,14 +213,14 @@ export function SessionTodoDock(props: {
             opacity: `${Math.max(0, Math.min(1, 1 - hide()))}`,
           }}
         >
-          <TodoList todos={props.todos} />
+          <TodoList todos={props.todos} powerSavings={settings.general.powerSavings()} />
         </div>
       </div>
     </Dynamic>
   )
 }
 
-function TodoList(props: { todos: Todo[] }) {
+function TodoList(props: { todos: Todo[]; powerSavings: boolean }) {
   const [store, setStore] = createStore({
     stuck: false,
   })
@@ -249,6 +253,7 @@ function TodoList(props: { todos: Todo[] }) {
               <TextStrikethrough
                 active={todo().status === "completed" || todo().status === "cancelled"}
                 text={todo().content}
+                visualDuration={powerSavingsMotionDuration(props.powerSavings, 0.35)}
                 class="text-14-regular min-w-0 break-words"
                 style={{
                   "line-height": "var(--line-height-normal)",

@@ -347,6 +347,23 @@ export const SettingsGeneral: Component = () => {
           />
         </SettingsRow>
 
+        <Show when={platform.platform === "web"}>
+          <SettingsRow
+            title={language.t("settings.general.row.powerSavings.title")}
+            description={language.t("settings.general.row.powerSavings.description")}
+          >
+            <div data-action="settings-power-savings">
+              <Switch
+                hideLabel
+                checked={settings.general.powerSavings()}
+                onChange={(checked) => settings.general.setPowerSavings(checked)}
+              >
+                {language.t("settings.general.row.powerSavings.title")}
+              </Switch>
+            </div>
+          </SettingsRow>
+        </Show>
+
         <SettingsRow
           title={language.t("settings.general.row.reasoningSummaries.title")}
           description={language.t("settings.general.row.reasoningSummaries.description")}

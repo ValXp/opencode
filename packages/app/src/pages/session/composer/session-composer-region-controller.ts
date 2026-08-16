@@ -5,6 +5,8 @@ import { createStore } from "solid-js/store"
 import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
+import { powerSavingsMotionDuration } from "@/context/power-savings"
+import { useSettings } from "@/context/settings"
 import type { SessionComposerController } from "./session-composer-state"
 
 export type SessionComposerFollowupDock = {
@@ -40,6 +42,7 @@ export function createSessionComposerRegionController(input: {
   setDockRef: (el: HTMLDivElement) => void
 }) {
   const sync = useSync()
+  const settings = useSettings()
   const [store, setStore] = createStore({
     ready: input.ready() || input.state.dock(),
     height: 320,
@@ -109,7 +112,7 @@ export function createSessionComposerRegionController(input: {
   const open = createMemo(() => store.ready && input.state.dock() && !input.state.closing())
   const progress = useSpring(
     () => (open() ? 1 : 0),
-    { visualDuration: 0.3, bounce: 0 },
+    () => ({ visualDuration: powerSavingsMotionDuration(settings.general.powerSavings(), 0.3), bounce: 0 }),
     () => `${input.sessionKey()}\0${store.ready}`,
   )
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))

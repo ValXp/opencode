@@ -54,16 +54,18 @@ export function TabsInfoPopup() {
               setDrawerOpen(true)
             }}
           >
-            <video
-              src={introducingTabsVideo}
-              class="absolute inset-0 h-full w-full object-cover"
-              loop
-              muted
-              autoplay
-              playsinline
-              aria-hidden="true"
-              onContextMenu={(event) => event.preventDefault()}
-            />
+            <Show when={!settings.general.powerSavings()}>
+              <video
+                src={introducingTabsVideo}
+                class="absolute inset-0 h-full w-full object-cover"
+                loop
+                muted
+                autoplay
+                playsinline
+                aria-hidden="true"
+                onContextMenu={(event) => event.preventDefault()}
+              />
+            </Show>
             <div class="absolute inset-x-0 bottom-0 flex w-full flex-col items-start gap-1.5 bg-[linear-gradient(180deg,rgba(0,0,0,0)_0%,#000000_100%)] px-3 py-5">
               <p class="w-full select-none text-[13px] font-[530] leading-none tracking-[-0.04px] text-[#FFFFFF]">
                 {language.t("help.tabs.title")}

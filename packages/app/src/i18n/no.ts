@@ -1239,6 +1239,9 @@ export const dict = {
     "Velg skallet som skal brukes i terminalen. Kompatible skall brukes også til agentens verktøykall.",
   "settings.general.row.shell.autoDefault": "Automatisk (standard)",
   "settings.general.row.shell.terminalOnly": "kun terminal",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.showFileTree.title": "Filtre",
   "settings.general.row.showFileTree.description": "Vis filtrepanelet i sesjoner",
   "settings.general.row.showNavigation.title": "Navigasjonskontroller",

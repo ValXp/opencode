@@ -29,6 +29,7 @@ import { getFilename } from "@opencode-ai/core/util/path"
 import { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
+import { powerSavingsScrollBehavior } from "@/context/power-savings"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
@@ -509,7 +510,10 @@ export default function LegacyLayout(props: ParentProps) {
       return
     }
     setState("scrollSessionKey", sessionKey)
-    element.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    element.scrollIntoView({
+      block: "nearest",
+      behavior: powerSavingsScrollBehavior(settings.general.powerSavings()),
+    })
   }
 
   const currentProject = createMemo(() => {
@@ -2401,7 +2405,10 @@ export default function LegacyLayout(props: ParentProps) {
             </div>
           </div>
         </div>
-        {import.meta.env.DEV && import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" && state.debugTools && <DebugBar />}
+        {import.meta.env.DEV &&
+          import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" &&
+          state.debugTools &&
+          !settings.general.powerSavings() && <DebugBar />}
       </div>
       <TabsInfoPopup />
       <ToastRegion v2={false} />

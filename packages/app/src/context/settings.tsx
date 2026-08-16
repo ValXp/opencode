@@ -3,6 +3,7 @@ import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { persisted } from "@/utils/persist"
 import { usePlatform } from "@/context/platform"
+import { powerSavingsPreference, setPowerSavingsMode } from "@/context/power-savings"
 
 export interface NotificationSettings {
   agent: boolean
@@ -32,6 +33,7 @@ export interface Settings {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
+    powerSavings: boolean
     showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     newLayoutDesigns?: boolean
@@ -193,6 +195,7 @@ const defaultSettings: Settings = {
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
+    powerSavings: false,
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
   },
@@ -243,6 +246,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     const showFileTree = withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree)
     const showSearch = withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch)
     const showStatus = withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus)
+    const powerSavings = createMemo(() => platform.platform === "web" && powerSavingsPreference(store.general))
     const showCustomAgents = withFallback(
       () => store.general?.showCustomAgents,
       defaultSettings.general.showCustomAgents,
@@ -351,6 +355,16 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     })
 
     createEffect(() => {
+      if (typeof document === "undefined") return
+      setPowerSavingsMode(document.documentElement, powerSavings())
+    })
+
+    onCleanup(() => {
+      if (typeof document === "undefined") return
+      setPowerSavingsMode(document.documentElement, false)
+    })
+
+    createEffect(() => {
       if (store.general?.followup !== "queue") return
       setStore("general", "followup", "steer")
     })
@@ -416,6 +430,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setEditToolPartsExpanded(value: boolean) {
           setStore("general", "editToolPartsExpanded", value)
+        },
+        powerSavings,
+        setPowerSavings(value: boolean) {
+          setStore("general", "powerSavings", value)
         },
         showCustomAgents,
         setShowCustomAgents(value: boolean) {

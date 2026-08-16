@@ -333,6 +333,23 @@ export const SettingsGeneralV2: Component<{
 
         <ShellSetting controller={shell} />
 
+        <Show when={platform.platform === "web"}>
+          <SettingsRowV2
+            title={language.t("settings.general.row.powerSavings.title")}
+            description={language.t("settings.general.row.powerSavings.description")}
+          >
+            <div data-action="settings-power-savings">
+              <Switch
+                hideLabel
+                checked={settings.general.powerSavings()}
+                onChange={(checked) => settings.general.setPowerSavings(checked)}
+              >
+                {language.t("settings.general.row.powerSavings.title")}
+              </Switch>
+            </div>
+          </SettingsRowV2>
+        </Show>
+
         <SettingsRowV2
           title={language.t("settings.general.row.reasoningSummaries.title")}
           description={language.t("settings.general.row.reasoningSummaries.description")}

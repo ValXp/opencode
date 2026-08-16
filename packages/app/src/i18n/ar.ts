@@ -852,6 +852,9 @@ export const dict = {
     "اختر shell المستخدم في المحطة الطرفية. تُستخدم واجهات shell المتوافقة أيضًا في استدعاءات أدوات الوكيل.",
   "settings.general.row.shell.autoDefault": "تلقائي (افتراضي)",
   "settings.general.row.shell.terminalOnly": "المحطة الطرفية فقط",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "المظهر",
   "settings.general.row.appearance.description": "تخصيص كيفية ظهور OpenCode على جهازك",
   "settings.general.row.colorScheme.title": "مخطط الألوان",

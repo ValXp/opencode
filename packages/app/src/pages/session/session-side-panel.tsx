@@ -43,6 +43,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
+import { powerSavingsScrollBehavior } from "@/context/power-savings"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
@@ -348,7 +349,11 @@ export function SessionSidePanel(props: {
                           <div class="sticky top-0 shrink-0 flex">
                             <Tabs.List
                               ref={(el: HTMLDivElement) => {
-                                const stop = createFileTabListSync({ el, contextOpen })
+                                const stop = createFileTabListSync({
+                                  el,
+                                  contextOpen,
+                                  scrollBehavior: () => powerSavingsScrollBehavior(settings.general.powerSavings()),
+                                })
                                 onCleanup(stop)
                               }}
                             >
@@ -569,7 +574,11 @@ export function SessionSidePanel(props: {
                           <Tabs.List
                             ref={(el: HTMLDivElement) => {
                               tabList = el
-                              const stop = createFileTabListSync({ el, contextOpen })
+                              const stop = createFileTabListSync({
+                                el,
+                                contextOpen,
+                                scrollBehavior: () => powerSavingsScrollBehavior(settings.general.powerSavings()),
+                              })
                               onCleanup(stop)
                             }}
                           >

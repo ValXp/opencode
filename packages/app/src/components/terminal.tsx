@@ -87,6 +87,7 @@ const useTerminalUiBindings = (input: {
   container: HTMLDivElement
   term: Term
   cleanups: VoidFunction[]
+  cursorBlink: () => boolean
   handlePointerDown: () => void
   handleLinkClick: (event: MouseEvent) => void
 }) => {
@@ -112,7 +113,7 @@ const useTerminalUiBindings = (input: {
   }
 
   const handleTextareaFocus = () => {
-    input.term.options.cursorBlink = true
+    input.term.options.cursorBlink = input.cursorBlink()
   }
   const handleTextareaBlur = () => {
     input.term.options.cursorBlink = false
@@ -345,6 +346,12 @@ export const Terminal = (props: TerminalProps) => {
     scheduleFit()
   })
 
+  createEffect(() => {
+    const enabled = !settings.general.powerSavings()
+    if (!term) return
+    term.options.cursorBlink = enabled && term.textarea === document.activeElement
+  })
+
   let zoom = platform.webviewZoom?.()
   createEffect(() => {
     const next = platform.webviewZoom?.()
@@ -398,7 +405,7 @@ export const Terminal = (props: TerminalProps) => {
       const g = loaded.ghostty
 
       const t = new mod.Terminal({
-        cursorBlink: true,
+        cursorBlink: !settings.general.powerSavings(),
         cursorStyle: "bar",
         cols: restoreSize?.cols,
         rows: restoreSize?.rows,
@@ -453,6 +460,7 @@ export const Terminal = (props: TerminalProps) => {
         container,
         term: t,
         cleanups,
+        cursorBlink: () => !settings.general.powerSavings(),
         handlePointerDown,
         handleLinkClick,
       })

@@ -3,6 +3,44 @@
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 @import "tw-animate-css";
 
+html[data-power-savings],
+html[data-power-savings] *,
+html[data-power-savings] *::before,
+html[data-power-savings] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-power-savings] *,
+html[data-power-savings] *::before,
+html[data-power-savings] *::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-power-savings] [data-component="animated-number"] [data-slot="animated-number-strip"][data-animating="true"] {
+  transition: transform 0.01ms linear !important;
+}
+
+html[data-power-savings] [data-component="text-reveal"] [data-slot="text-reveal-entering"] {
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+  transform: none !important;
+}
+
+html[data-power-savings] [data-component="text-reveal"] [data-slot="text-reveal-leaving"] {
+  display: none !important;
+}
+
+@supports (caret-animation: manual) {
+  html[data-power-savings],
+  html[data-power-savings] * {
+    caret-animation: manual !important;
+  }
+}
+
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");

@@ -13,7 +13,11 @@ export const nextTabListScrollLeft = (input: Input) => {
   return input.scrollWidth - input.clientWidth
 }
 
-export const createFileTabListSync = (input: { el: HTMLDivElement; contextOpen: () => boolean }) => {
+export const createFileTabListSync = (input: {
+  el: HTMLDivElement
+  contextOpen: () => boolean
+  scrollBehavior?: () => ScrollBehavior
+}) => {
   let frame: number | undefined
   let prevScrollWidth = input.el.scrollWidth
   let prevContextOpen = input.contextOpen()
@@ -33,7 +37,7 @@ export const createFileTabListSync = (input: { el: HTMLDivElement; contextOpen: 
     if (left !== undefined) {
       input.el.scrollTo({
         left,
-        behavior: "smooth",
+        behavior: input.scrollBehavior?.() ?? "smooth",
       })
     }
 

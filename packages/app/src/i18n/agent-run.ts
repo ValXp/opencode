@@ -1,4 +1,7 @@
 export const AGENT_RUN_ENGLISH = {
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduces GPU-heavy visual effects and background rendering activity in the browser.",
   "session.agents.summary": "{{active}} active · {{total}} total",
   "session.agents.status.running": "Running",
   "session.agents.status.retrying": "Retrying",

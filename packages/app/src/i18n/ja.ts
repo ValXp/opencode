@@ -840,6 +840,9 @@ export const dict = {
     "ターミナルで使用するシェルを選択します。互換性のあるシェルはエージェントのツール呼び出しにも使用されます。",
   "settings.general.row.shell.autoDefault": "自動 (デフォルト)",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
+  "settings.general.row.powerSavings.title": "Power saving mode",
+  "settings.general.row.powerSavings.description":
+    "Reduce animations and visual effects to lower browser rendering work",
   "settings.general.row.appearance.title": "外観",
   "settings.general.row.appearance.description": "デバイスでのOpenCodeの表示をカスタマイズします",
   "settings.general.row.colorScheme.title": "配色",

@@ -1,4 +1,4 @@
-import { attachSpring, motionValue } from "motion"
+import { attachSpring, motionValue, MotionGlobalConfig } from "motion"
 import type { SpringOptions } from "motion"
 import { createComputed, createEffect, createSignal, onCleanup } from "solid-js"
 
@@ -21,17 +21,26 @@ export function useSpring(target: () => number, options?: Opt | (() => Opt), sna
   let stop = attachSpring(spring, source, config)
   let off = spring.on("change", (next: number) => setValue(next))
 
+  const jump = (next: number) => {
+    stop()
+    spring.jump(next)
+    source.jump(next)
+    stop = attachSpring(spring, source, config)
+    setValue(next)
+  }
+
   createComputed(() => {
     const next = target()
     const nextSnap = snapKey?.()
+    if (read()?.visualDuration === 0) {
+      snapValue = nextSnap
+      jump(next)
+      return
+    }
     if (snapKey && nextSnap !== snapValue) {
       // State boundaries should adopt their target without animating from the previous context.
       snapValue = nextSnap
-      stop()
-      spring.jump(next)
-      source.jump(next)
-      stop = attachSpring(spring, source, config)
-      setValue(next)
+      jump(next)
       return
     }
     source.set(next)
@@ -55,4 +64,12 @@ export function useSpring(target: () => number, options?: Opt | (() => Opt), sna
   })
 
   return value
+}
+
+export function setMotionDisabled(disabled: boolean) {
+  MotionGlobalConfig.skipAnimations = disabled
+}
+
+export function isMotionDisabled() {
+  return MotionGlobalConfig.skipAnimations === true
 }
