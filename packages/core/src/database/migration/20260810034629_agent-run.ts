@@ -13,6 +13,11 @@ type LegacyPartRow = {
   message_data: string
 }
 
+type LegacySessionRow = {
+  id: string
+  parent_id: string | null
+}
+
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 const decodeMessageID = Schema.decodeUnknownOption(SessionMessage.ID)
 
@@ -66,7 +71,12 @@ export default {
       yield* tx.run(`CREATE INDEX \`agent_run_owner_idx\` ON \`agent_run\` (\`owner_id\`,\`state_type\`);`)
       yield* tx.run(`CREATE INDEX \`agent_run_history_idx\` ON \`agent_run\` (\`time_finished\`,\`id\`);`)
 
-      const sessions = new Set((yield* tx.all<{ id: string }>(sql`SELECT id FROM session`)).map((row) => row.id))
+      const sessions = new Map(
+        (yield* tx.all<LegacySessionRow>(sql`SELECT id, parent_id FROM session`)).map(
+          (row) => [row.id, row.parent_id] as const,
+        ),
+      )
+      const roots = sessionRoots(sessions)
       const rows = yield* tx.all<LegacyPartRow>(sql`
         SELECT
           part.id AS part_id,
@@ -85,7 +95,7 @@ export default {
       const previousBySession = new Map<string, string>()
       const runs = rows
         .flatMap((row) => {
-          const run = legacyRun(row, sessions)
+          const run = legacyRun(row, sessions, roots)
           return run ? [run] : []
         })
         .map((run) => {
@@ -149,8 +159,14 @@ export default {
   },
 } satisfies DatabaseMigration.Migration
 
-function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
+function legacyRun(
+  row: LegacyPartRow,
+  sessions: ReadonlyMap<string, string | null>,
+  roots: ReadonlyMap<string, string>,
+) {
   if (!sessions.has(row.caller_session_id)) return
+  const callerRoot = roots.get(row.caller_session_id)
+  if (!callerRoot) return
   const messageID = Option.getOrUndefined(decodeMessageID(row.message_id))
   if (!messageID) return
   const data = Option.getOrUndefined(decodeJson(row.data))
@@ -174,7 +190,9 @@ function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
     partMetadata?.sessionID,
   ].filter((value): value is string => typeof value === "string" && value.length > 0)
   const uniqueSessionIDs = [...new Set(sessionIDs)]
-  if (uniqueSessionIDs.length !== 1 || !sessions.has(uniqueSessionIDs[0])) return
+  if (uniqueSessionIDs.length !== 1) return
+  const sessionID = uniqueSessionIDs[0]
+  if (!sessions.get(sessionID) || roots.get(sessionID) !== callerRoot) return
 
   const model = isRecord(metadata?.model)
     ? metadata.model
@@ -205,7 +223,7 @@ function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
   if (!state) return
   return {
     id: `arun_${row.part_id}`,
-    sessionID: uniqueSessionIDs[0],
+    sessionID,
     callerSessionID: row.caller_session_id,
     messageID,
     callID: data.callID,
@@ -230,6 +248,45 @@ function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
     updated: row.time_updated,
     finished: timestamp(time?.end) ?? row.time_updated,
   }
+}
+
+function sessionRoots(sessions: ReadonlyMap<string, string | null>) {
+  const roots = new Map<string, string>()
+  const invalid = new Set<string>()
+
+  sessions.forEach((_parentID, sessionID) => {
+    if (roots.has(sessionID) || invalid.has(sessionID)) return
+    const path: string[] = []
+    const seen = new Set<string>()
+    let current = sessionID
+
+    while (true) {
+      const known = roots.get(current)
+      if (known) {
+        path.forEach((id) => roots.set(id, known))
+        return
+      }
+      if (invalid.has(current) || seen.has(current)) {
+        path.forEach((id) => invalid.add(id))
+        return
+      }
+
+      const parentID = sessions.get(current)
+      if (parentID === undefined) {
+        path.forEach((id) => invalid.add(id))
+        return
+      }
+      path.push(current)
+      seen.add(current)
+      if (parentID === null) {
+        path.forEach((id) => roots.set(id, current))
+        return
+      }
+      current = parentID
+    }
+  })
+
+  return roots
 }
 
 function timestamp(input: unknown) {

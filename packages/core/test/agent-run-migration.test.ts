@@ -29,22 +29,22 @@ describe("AgentRun migration", () => {
           sql`CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
         )
         yield* db.run(sql`
-          INSERT INTO session (id, title, agent, time_created, time_updated)
+          INSERT INTO session (id, parent_id, title, agent, time_created, time_updated)
           VALUES
-            ('ses_parent', 'Parent', 'build', 1, 300),
-            ('ses_child', 'Inspect code (@explore subagent)', 'explore', 100, 190),
-            ('ses_background', 'Research options (@explore subagent)', 'explore', 200, 290),
-            ('ses_failed', 'Check failure (@general subagent)', 'general', 300, 390),
-            ('ses_cancelled', 'Stop cleanly (@general subagent)', 'general', 400, 490),
-            ('ses_interrupted', 'Handle abort (@general subagent)', 'general', 500, 590),
-            ('ses_pending', 'Pending legacy (@explore subagent)', 'explore', 600, 690),
-            ('ses_running', 'Running legacy (@explore subagent)', 'explore', 700, 790),
-            ('ses_task_error', 'Explicit task error (@general subagent)', 'general', 800, 890),
-            ('ses_resumed', 'Reusable task (@general subagent)', 'general', 900, 1090),
-            ('ses_malformed', 'Malformed task (@general subagent)', 'general', 1100, 1190),
-            ('ses_lookalike', 'Missing child (@general subagent)', 'general', 1200, 1290),
-            ('ses_bad_message', 'Malformed message (@general subagent)', 'general', 1300, 1390),
-            ('ses_legacy_id', 'Legacy message ID (@general subagent)', 'general', 1400, 1490)
+            ('ses_parent', NULL, 'Parent', 'build', 1, 300),
+            ('ses_child', 'ses_parent', 'Inspect code (@explore subagent)', 'explore', 100, 190),
+            ('ses_background', 'ses_parent', 'Research options (@explore subagent)', 'explore', 200, 290),
+            ('ses_failed', 'ses_parent', 'Check failure (@general subagent)', 'general', 300, 390),
+            ('ses_cancelled', 'ses_parent', 'Stop cleanly (@general subagent)', 'general', 400, 490),
+            ('ses_interrupted', 'ses_parent', 'Handle abort (@general subagent)', 'general', 500, 590),
+            ('ses_pending', 'ses_parent', 'Pending legacy (@explore subagent)', 'explore', 600, 690),
+            ('ses_running', 'ses_parent', 'Running legacy (@explore subagent)', 'explore', 700, 790),
+            ('ses_task_error', 'ses_parent', 'Explicit task error (@general subagent)', 'general', 800, 890),
+            ('ses_resumed', 'ses_parent', 'Reusable task (@general subagent)', 'general', 900, 1090),
+            ('ses_malformed', 'ses_parent', 'Malformed task (@general subagent)', 'general', 1100, 1190),
+            ('ses_lookalike', 'ses_parent', 'Missing child (@general subagent)', 'general', 1200, 1290),
+            ('ses_bad_message', 'ses_parent', 'Malformed message (@general subagent)', 'general', 1300, 1390),
+            ('ses_legacy_id', 'ses_parent', 'Legacy message ID (@general subagent)', 'general', 1400, 1490)
         `)
         yield* db.run(
           sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('msg_foreground', 'ses_parent', 90, 190, ${JSON.stringify({ role: "assistant" })}), ('msg_background', 'ses_parent', 195, 290, ${JSON.stringify({ role: "assistant" })}), ('msg_failed', 'ses_parent', 295, 390, ${JSON.stringify({ role: "assistant" })}), ('msg_cancelled', 'ses_parent', 395, 490, ${JSON.stringify({ role: "assistant" })}), ('msg_interrupted', 'ses_parent', 495, 590, ${JSON.stringify({ role: "assistant", error: { name: "MessageAbortedError", data: { message: "Aborted" } } })}), ('msg_pending', 'ses_parent', 595, 690, ${JSON.stringify({ role: "assistant" })}), ('msg_running', 'ses_parent', 695, 790, ${JSON.stringify({ role: "assistant" })}), ('msg_task_error', 'ses_parent', 795, 890, ${JSON.stringify({ role: "assistant" })}), ('msg_resume_first', 'ses_parent', 895, 990, ${JSON.stringify({ role: "assistant" })}), ('msg_resume_second', 'ses_parent', 995, 1090, ${JSON.stringify({ role: "assistant" })}), ('msg_malformed', 'ses_parent', 1095, 1190, ${JSON.stringify({ role: "assistant" })}), ('msg_missing', 'ses_parent', 1195, 1290, ${JSON.stringify({ role: "assistant" })}), ('msg_bad_message', 'ses_parent', 1295, 1390, '{')`,
@@ -732,4 +732,63 @@ describe("AgentRun migration", () => {
       }),
     )
   })
+
+  test("rejects root, cross-tree, and cyclic legacy task targets", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(
+          sql`CREATE TABLE session (id text PRIMARY KEY, parent_id text, title text, agent text, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+        )
+        yield* db.run(
+          sql`CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
+        )
+        yield* db.run(
+          sql`CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
+        )
+        yield* db.run(sql`
+          INSERT INTO session (id, parent_id, title, agent, time_created, time_updated)
+          VALUES
+            ('ses_caller', NULL, 'Caller', 'build', 1, 100),
+            ('ses_valid', 'ses_caller', 'Valid child', 'general', 10, 100),
+            ('ses_other', NULL, 'Other root', 'build', 1, 100),
+            ('ses_cross', 'ses_other', 'Cross-tree child', 'general', 10, 100),
+            ('ses_cycle_a', 'ses_cycle_b', 'Cycle A', 'general', 10, 100),
+            ('ses_cycle_b', 'ses_cycle_a', 'Cycle B', 'general', 10, 100)
+        `)
+        yield* db.run(
+          sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('msg_valid', 'ses_caller', 10, 20, ${JSON.stringify({ role: "assistant" })}), ('msg_root', 'ses_caller', 20, 30, ${JSON.stringify({ role: "assistant" })}), ('msg_cross', 'ses_caller', 30, 40, ${JSON.stringify({ role: "assistant" })}), ('msg_cycle', 'ses_caller', 40, 50, ${JSON.stringify({ role: "assistant" })})`,
+        )
+        yield* db.run(sql`
+          INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
+          VALUES
+            ('prt_valid', 'msg_valid', 'ses_caller', 10, 20, ${legacyTask("call_valid", "ses_valid")}),
+            ('prt_root', 'msg_root', 'ses_caller', 20, 30, ${legacyTask("call_root", "ses_caller")}),
+            ('prt_cross', 'msg_cross', 'ses_caller', 30, 40, ${legacyTask("call_cross", "ses_cross")}),
+            ('prt_cycle', 'msg_cycle', 'ses_caller', 40, 50, ${legacyTask("call_cycle", "ses_cycle_a")})
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [agentRunMigration])
+
+        expect(yield* db.all(sql`SELECT id, session_id FROM agent_run ORDER BY id`)).toEqual([
+          { id: "arun_prt_valid", session_id: "ses_valid" },
+        ])
+      }),
+    )
+  })
 })
+
+function legacyTask(callID: string, sessionID: string) {
+  return JSON.stringify({
+    type: "tool",
+    callID,
+    tool: "task",
+    state: {
+      status: "completed",
+      input: { prompt: "Run task", description: "Run task", subagent_type: "general" },
+      metadata: { sessionId: sessionID },
+      output: `<task id="${sessionID}" state="completed"></task>`,
+      time: { start: 10, end: 20 },
+    },
+  })
+}
