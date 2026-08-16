@@ -20,6 +20,7 @@ import { detectServerProtocol } from "@/utils/server-protocol"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
 import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
+import { editedServerActivation, selectServerConnection } from "./server-selection"
 
 const DEFAULT_USERNAME = "opencode"
 
@@ -323,7 +324,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
         return
       }
       if (normalized === input.original.http.url) {
-        server.add(conn)
+        server.add(conn, editedServerActivation(input.original, server.key))
       } else {
         replaceServer(input.original, conn)
       }
@@ -336,7 +337,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     const originalKey = ServerConnection.key(original)
     const active = server.key
     tabs.removeServer(originalKey)
-    const newConn = server.add(next)
+    const newConn = server.add(next, { activate: false })
     if (!newConn) return
     const nextActive = active === originalKey ? ServerConnection.key(newConn) : active
     if (nextActive) server.setActive(nextActive)
@@ -384,13 +385,13 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   async function select(conn: ServerConnection.Any, persist?: boolean) {
     if (!persist && global.servers.health[ServerConnection.key(conn)]?.healthy === false) return
     options.onSelect?.()
-    if (persist && conn.type === "http") {
-      server.add(conn)
-      navigate("/")
-      return
-    }
-    navigate("/")
-    queueMicrotask(() => server.setActive(ServerConnection.key(conn)))
+    selectServerConnection({
+      connection: conn,
+      persist,
+      add: server.add,
+      navigate: () => navigate("/"),
+      setActive: server.setActive,
+    })
   }
 
   const handleAddChange = (value: string) => {
