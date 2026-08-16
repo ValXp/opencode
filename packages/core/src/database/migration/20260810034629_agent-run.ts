@@ -1,3 +1,4 @@
+import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { sql } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import type { DatabaseMigration } from "../migration"
@@ -13,6 +14,7 @@ type LegacyPartRow = {
 }
 
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+const decodeMessageID = Schema.decodeUnknownOption(SessionMessage.ID)
 
 export default {
   id: "20260810034629_agent-run",
@@ -149,6 +151,8 @@ export default {
 
 function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
   if (!sessions.has(row.caller_session_id)) return
+  const messageID = Option.getOrUndefined(decodeMessageID(row.message_id))
+  if (!messageID) return
   const data = Option.getOrUndefined(decodeJson(row.data))
   if (!isRecord(data)) return
   if (data.type !== "tool" || data.tool !== "task") return
@@ -203,7 +207,7 @@ function legacyRun(row: LegacyPartRow, sessions: ReadonlySet<string>) {
     id: `arun_${row.part_id}`,
     sessionID: uniqueSessionIDs[0],
     callerSessionID: row.caller_session_id,
-    messageID: row.message_id,
+    messageID,
     callID: data.callID,
     agent: data.state.input.subagent_type,
     description: data.state.input.description,

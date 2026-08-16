@@ -43,10 +43,14 @@ describe("AgentRun migration", () => {
             ('ses_resumed', 'Reusable task (@general subagent)', 'general', 900, 1090),
             ('ses_malformed', 'Malformed task (@general subagent)', 'general', 1100, 1190),
             ('ses_lookalike', 'Missing child (@general subagent)', 'general', 1200, 1290),
-            ('ses_bad_message', 'Malformed message (@general subagent)', 'general', 1300, 1390)
+            ('ses_bad_message', 'Malformed message (@general subagent)', 'general', 1300, 1390),
+            ('ses_legacy_id', 'Legacy message ID (@general subagent)', 'general', 1400, 1490)
         `)
         yield* db.run(
           sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('msg_foreground', 'ses_parent', 90, 190, ${JSON.stringify({ role: "assistant" })}), ('msg_background', 'ses_parent', 195, 290, ${JSON.stringify({ role: "assistant" })}), ('msg_failed', 'ses_parent', 295, 390, ${JSON.stringify({ role: "assistant" })}), ('msg_cancelled', 'ses_parent', 395, 490, ${JSON.stringify({ role: "assistant" })}), ('msg_interrupted', 'ses_parent', 495, 590, ${JSON.stringify({ role: "assistant", error: { name: "MessageAbortedError", data: { message: "Aborted" } } })}), ('msg_pending', 'ses_parent', 595, 690, ${JSON.stringify({ role: "assistant" })}), ('msg_running', 'ses_parent', 695, 790, ${JSON.stringify({ role: "assistant" })}), ('msg_task_error', 'ses_parent', 795, 890, ${JSON.stringify({ role: "assistant" })}), ('msg_resume_first', 'ses_parent', 895, 990, ${JSON.stringify({ role: "assistant" })}), ('msg_resume_second', 'ses_parent', 995, 1090, ${JSON.stringify({ role: "assistant" })}), ('msg_malformed', 'ses_parent', 1095, 1190, ${JSON.stringify({ role: "assistant" })}), ('msg_missing', 'ses_parent', 1195, 1290, ${JSON.stringify({ role: "assistant" })}), ('msg_bad_message', 'ses_parent', 1295, 1390, '{')`,
+        )
+        yield* db.run(
+          sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('msglegacy', 'ses_parent', 1395, 1490, ${JSON.stringify({ role: "assistant" })})`,
         )
         yield* db.run(sql`
           INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
@@ -151,6 +155,32 @@ describe("AgentRun migration", () => {
                 },
               })}
             )
+        `)
+        yield* db.run(sql`
+          INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
+          VALUES (
+            'prt_legacy_id',
+            'msglegacy',
+            'ses_parent',
+            1400,
+            1490,
+            ${JSON.stringify({
+              type: "tool",
+              callID: "call_legacy_id",
+              tool: "task",
+              state: {
+                status: "completed",
+                input: {
+                  prompt: "Do not backfill an incompatible source message ID",
+                  description: "Legacy message ID",
+                  subagent_type: "general",
+                },
+                metadata: { sessionId: "ses_legacy_id" },
+                output: '<task id="ses_legacy_id" state="completed"></task>',
+                time: { start: 1410, end: 1490 },
+              },
+            })}
+          )
         `)
         yield* db.run(sql`
           INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
@@ -668,7 +698,7 @@ describe("AgentRun migration", () => {
             version: 0,
           },
         ])
-        expect(yield* db.get(sql`SELECT COUNT(*) AS count FROM part`)).toEqual({ count: 13 })
+        expect(yield* db.get(sql`SELECT COUNT(*) AS count FROM part`)).toEqual({ count: 14 })
         expect(yield* db.get(sql`SELECT COUNT(*) AS count FROM agent_run`)).toEqual({ count: 10 })
         expect(
           yield* db.all(
