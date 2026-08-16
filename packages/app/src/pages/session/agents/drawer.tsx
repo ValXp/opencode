@@ -32,18 +32,22 @@ export function SessionAgentsDrawer() {
 
   return (
     <Show when={!isDesktop()}>
-      <Drawer open={agents.mobileDrawerOpen()} onOpenChange={agents.setMobileDrawerOpen} side="right">
-        <DrawerContent id="session-agents-drawer">
+      <Drawer
+        open={agents.mobileDrawerOpen()}
+        onOpenChange={agents.setMobileDrawerOpen}
+        side={language.direction() === "rtl" ? "left" : "right"}
+      >
+        <DrawerContent id="session-agents-drawer" aria-label={language.t("settings.agents.title")}>
           <DrawerClose
             as={IconButtonV2}
             type="button"
             size="small"
             variant="ghost-muted"
-            class="absolute right-2 top-2 z-10"
+            class="absolute end-2 top-2 z-10"
             aria-label={language.t("common.close")}
             icon={<Icon name="close-small" />}
           />
-          <SessionAgentsPanel class="size-full [&_[data-component=agents-panel]>header]:pr-10" />
+          <SessionAgentsPanel class="size-full [&_[data-component=agents-panel]>header]:pe-10" />
         </DrawerContent>
       </Drawer>
     </Show>

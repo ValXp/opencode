@@ -215,7 +215,10 @@ describe.skipIf(isServer)("AgentsPanel", () => {
     expect(ancestor.textContent).toContain("Context")
     expect(ancestor.textContent).not.toContain("Unknown")
     expect(nested.dataset.depth).toBe("1")
-    expect(Number.parseInt(nested.style.paddingLeft)).toBeGreaterThan(Number.parseInt(ancestor.style.paddingLeft))
+    expect(Number.parseInt(nested.style.paddingInlineStart)).toBeGreaterThan(
+      Number.parseInt(ancestor.style.paddingInlineStart),
+    )
+    expect(nested.style.paddingLeft).toBe("")
   })
 
   test("presents every authoritative run state", () => {
@@ -268,14 +271,19 @@ describe.skipIf(isServer)("AgentsPanel", () => {
 
     expect(row.textContent).toContain("Indexing symbols")
     expect(row.textContent).not.toContain("No activity")
+    expect(row.querySelector('[data-slot="agent-activity"]')?.hasAttribute("aria-live")).toBe(false)
+    expect(row.querySelector('[data-slot="agent-activity-live"]')?.getAttribute("aria-live")).toBe("polite")
+    expect(row.querySelector('[data-slot="agent-activity-live"]')?.textContent).toBe("Indexing symbols")
 
     setNow(60_001)
     setProjection(projectAgents(snapshot, { now: 60_001 }))
     expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 60s · Last: Indexing symbols")
+    expect(row.querySelector('[data-slot="agent-activity-live"]')?.textContent).toBe("Indexing symbols")
 
     setNow(61_001)
     setProjection(projectAgents(snapshot, { now: 61_001 }))
     expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 61s · Last: Indexing symbols")
+    expect(row.querySelector('[data-slot="agent-activity-live"]')?.textContent).toBe("Indexing symbols")
   })
 
   test("does not mark queued runs inactive and ages newly started runs from their start", () => {

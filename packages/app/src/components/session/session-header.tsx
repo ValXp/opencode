@@ -236,7 +236,7 @@ export function SessionHeader() {
   const tint = createMemo(() =>
     messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
   )
-  const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
+  const actionsState = createMemo<SessionHeaderActionsState>(() => ({
     agentsCount: agents.projection().activeCount,
     agentsLabel: language.t("settings.agents.title"),
     agentsOpened: isDesktop()
@@ -339,7 +339,7 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount}>
             <Show
-              when={isV2}
+              when={isV2()}
               fallback={
                 <div class="flex items-center gap-2">
                   <Show when={projectDirectory()}>
@@ -456,6 +456,7 @@ export function SessionHeader() {
                     </div>
                   </Show>
                   <div class="flex items-center gap-1">
+                    <SessionHeaderLegacyAgentsAction state={actionsState()} />
                     <Show when={status()}>
                       <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                         <StatusPopover />
@@ -523,7 +524,7 @@ export function SessionHeader() {
                 </div>
               }
             >
-              <SessionHeaderV2Actions state={v2ActionsState()} />
+              <SessionHeaderV2Actions state={actionsState()} />
             </Show>
           </Portal>
         )}
@@ -532,7 +533,7 @@ export function SessionHeader() {
   )
 }
 
-type SessionHeaderV2ActionsState = {
+type SessionHeaderActionsState = {
   agentsCount: number
   agentsLabel: string
   agentsOpened: boolean
@@ -547,7 +548,28 @@ type SessionHeaderV2ActionsState = {
   onReviewToggle: () => void
 }
 
-function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
+function SessionHeaderLegacyAgentsAction(props: { state: SessionHeaderActionsState }) {
+  return (
+    <Tooltip placement="bottom" value={props.state.agentsLabel}>
+      <Button
+        type="button"
+        variant="ghost"
+        class="titlebar-icon h-6 min-w-8 px-1 gap-1 box-border shrink-0"
+        data-slot="session-agents-header-trigger"
+        data-active-count={props.state.agentsCount}
+        aria-label={`${props.state.agentsLabel}: ${props.state.agentsCount}`}
+        aria-expanded={props.state.agentsOpened}
+        aria-controls={props.state.agentsControls}
+        onClick={props.state.onAgentsOpen}
+      >
+        <Icon name="subagent" size="small" />
+        <span class="min-w-2.5 text-11-medium tabular-nums">{props.state.agentsCount}</span>
+      </Button>
+    </Tooltip>
+  )
+}
+
+function SessionHeaderV2Actions(props: { state: SessionHeaderActionsState }) {
   return (
     <div class="flex items-center gap-2">
       <TooltipV2 class="shrink-0" placement="bottom" value={props.state.agentsLabel}>

@@ -113,14 +113,14 @@ export function AgentRunRow(props: AgentRunRowProps) {
       data-context-only={props.row.contextOnly ? "true" : undefined}
       class="px-1"
       classList={{ "opacity-60": props.row.contextOnly }}
-      style={{ "padding-left": `${4 + props.row.depth * 16}px` }}
+      style={{ "padding-inline-start": `${4 + props.row.depth * 16}px` }}
     >
       <div class="rounded-md text-13-regular text-text-base hover:bg-surface-raised-base-hover">
         <button
           type="button"
           aria-expanded={expanded()}
           aria-controls={detailsID}
-          class="w-full px-2 py-2 text-left"
+          class="w-full px-2 py-2 text-start"
           onClick={toggle}
         >
           <div class="flex min-w-0 items-center gap-2">
@@ -161,8 +161,7 @@ export function AgentRunRow(props: AgentRunRowProps) {
           <Show when={props.row.current?.activity.summary || inactive()}>
             <div
               data-slot="agent-activity"
-              aria-live="polite"
-              class="mt-1 truncate pl-6 text-11-regular"
+              class="mt-1 truncate ps-6 text-11-regular"
               classList={{ "text-text-weak": !inactive(), "text-icon-warning-base": inactive() }}
             >
               {inactive()
@@ -174,6 +173,16 @@ export function AgentRunRow(props: AgentRunRowProps) {
             </div>
           </Show>
         </button>
+        <span data-slot="agent-status-live" aria-live="polite" aria-atomic="true" class="sr-only">
+          {statusLabel()}
+        </span>
+        <Show when={props.row.current?.activity.summary}>
+          {(summary) => (
+            <span data-slot="agent-activity-live" aria-live="polite" aria-atomic="true" class="sr-only">
+              {summary()}
+            </span>
+          )}
+        </Show>
 
         <Show when={expanded()}>
           <div
@@ -214,7 +223,9 @@ export function AgentRunRow(props: AgentRunRowProps) {
                 )}
               </For>
               <dt class="text-text-weak">{language.t("session.agents.details.elapsed")}</dt>
-              <dd class="text-text-base">{formatElapsed(props.row.current, now()) ?? language.t("common.unknown")}</dd>
+              <dd class="text-text-base">
+                {formatElapsed(props.row.current, now(), language.intl()) ?? language.t("common.unknown")}
+              </dd>
             </dl>
             <p data-slot="agent-run-counts" class="mt-2 text-11-regular text-text-weak">
               {language.t("session.agents.details.runCounts", {

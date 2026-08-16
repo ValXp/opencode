@@ -724,6 +724,65 @@ test("repairs an unknown run received after the previous repair snapshot was cap
   owner.dispose()
 })
 
+test("repairs journal overflow once and preserves the first evicted run", async () => {
+  const eventLayer = events()
+  const stale = Promise.withResolvers<AgentRun.Snapshot>()
+  const infos = Array.from({ length: 257 }, (_, index) =>
+    run({
+      id: `arun_overflow_${index}`,
+      sessionID: "ses_child",
+      state: { type: "running" },
+      version: 1,
+    }),
+  )
+  let requests = 0
+  const owner = createRoot((dispose) => ({
+    dispose,
+    agents: createAgentsContext({
+      sessionID: () => "ses_root",
+      getSession: () => ({ id: "ses_root" }),
+      queryKey: () => "server\0workspace",
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      fetchSnapshot: async () => {
+        requests++
+        if (requests === 1) return snapshot()
+        if (requests === 2) return stale.promise
+        if (requests === 3) throw new Error("repair unavailable")
+        const current = snapshot()
+        return AgentRun.Snapshot.make({ ...current, active: [...current.active, ...infos] })
+      },
+      events: eventLayer,
+      now: () => 3_000,
+    }),
+  }))
+
+  await settle()
+  const refresh = owner.agents.refresh()
+  await settle()
+  infos.forEach((info) =>
+    eventLayer.emit({
+      type: "agent.run.updated",
+      properties: { info: Schema.encodeSync(AgentRun.Info)(info) },
+    }),
+  )
+  stale.resolve(snapshot())
+  await refresh
+  await settle()
+
+  expect(requests).toBe(3)
+  expect(owner.agents.partial()).toBeTrue()
+  await settle()
+  expect(requests).toBe(3)
+
+  await owner.agents.refresh()
+  await settle()
+
+  expect(requests).toBe(4)
+  expect(owner.agents.partial()).toBeFalse()
+  expect(owner.agents.snapshot()?.active.some((info) => info.id === infos[0]?.id)).toBeTrue()
+  owner.dispose()
+})
+
 test("replays newer run events after an unknown-node repair snapshot", async () => {
   const eventLayer = events()
   const repair = Promise.withResolvers<AgentRun.Snapshot>()

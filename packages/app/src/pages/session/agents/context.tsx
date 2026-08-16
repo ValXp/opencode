@@ -67,6 +67,8 @@ export function createAgentsContext(input: {
     partial: boolean
   }>({ now: now(), showHistory: false, expanded: {}, mobileDrawerOpen: false, partial: false })
   let eventSequence = 0
+  let evictedEventSequence = 0
+  let attemptedEvictedEventSequence = 0
   let repair: { rootSessionID: string; token: object } | undefined
   let committedToken: object | undefined
   const runEvents = new Map<AgentRun.ID, JournalEntry>()
@@ -130,6 +132,8 @@ export function createAgentsContext(input: {
     if (runEvents.size <= PENDING_RUN_EVENTS_LIMIT) return true
     const oldest = runEvents.keys().next().value
     if (oldest !== undefined) {
+      const evicted = runEvents.get(oldest)
+      if (evicted) evictedEventSequence = Math.max(evictedEventSequence, evicted.sequence)
       runEvents.delete(oldest)
       repairAttemptVersions.delete(oldest)
     }
@@ -165,6 +169,9 @@ export function createAgentsContext(input: {
 
   function markRepairAttempts(baseline: number) {
     if (!store.snapshot) return
+    if (evictedEventSequence <= baseline) {
+      attemptedEvictedEventSequence = Math.max(attemptedEvictedEventSequence, evictedEventSequence)
+    }
     unresolvedRunEvents(store.snapshot).forEach((entry) => {
       if (entry.sequence > baseline) return
       repairAttemptVersions.set(
@@ -178,10 +185,13 @@ export function createAgentsContext(input: {
     const root = rootSessionID()
     if (!root || !store.snapshot) return
     const unresolved = unresolvedRunEvents(store.snapshot)
-    if (!unresolved.length) return
+    if (!unresolved.length && evictedEventSequence === 0) return
     setStore("partial", true)
     if (repair?.rootSessionID === root) return
-    if (!unresolved.some((entry) => (repairAttemptVersions.get(entry.info.id) ?? -1) < entry.info.version)) return
+    const needsRunRepair = unresolved.some(
+      (entry) => (repairAttemptVersions.get(entry.info.id) ?? -1) < entry.info.version,
+    )
+    if (!needsRunRepair && attemptedEvictedEventSequence >= evictedEventSequence) return
     const token = {}
     repair = { rootSessionID: root, token }
     void query
@@ -195,6 +205,10 @@ export function createAgentsContext(input: {
   }
 
   function applySnapshot(result: SnapshotResult) {
+    if (evictedEventSequence <= result.baseline) {
+      evictedEventSequence = 0
+      attemptedEvictedEventSequence = 0
+    }
     const relevant = relatedRunIDs(result.snapshot)
     const next = [...runEvents.values()].reduce((snapshot, entry) => {
       if (!relevant.has(entry.info.id)) {
@@ -207,7 +221,7 @@ export function createAgentsContext(input: {
       if (entry.sequence <= result.baseline && runEvents.get(entry.info.id) === entry) runEvents.delete(entry.info.id)
       return upsertAgentRun(snapshot, entry.info)
     }, result.snapshot)
-    const partial = unresolvedRunEvents(next).length > 0
+    const partial = evictedEventSequence > 0 || unresolvedRunEvents(next).length > 0
     setStore({ snapshot: next, error: undefined, lastSuccessAt: now(), partial })
     if (partial) ensureRepair()
   }
@@ -263,6 +277,8 @@ export function createAgentsContext(input: {
           repair = undefined
           committedToken = undefined
           eventSequence = 0
+          evictedEventSequence = 0
+          attemptedEvictedEventSequence = 0
           runEvents.clear()
           repairAttemptVersions.clear()
         })

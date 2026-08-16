@@ -18,7 +18,7 @@ export function timestampISOString(value: Timestamp) {
   return new Date(DateTime.toEpochMillis(value)).toISOString()
 }
 
-export function formatElapsed(run: AgentRun.Info | undefined, now: number) {
+export function formatElapsed(run: AgentRun.Info | undefined, now: number, locale: string) {
   if (!run) return undefined
   const start = DateTime.toEpochMillis(run.time.started ?? run.time.created)
   const end = run.time.finished
@@ -30,7 +30,12 @@ export function formatElapsed(run: AgentRun.Info | undefined, now: number) {
   const hours = Math.floor(seconds / 3_600)
   const minutes = Math.floor((seconds % 3_600) / 60)
   const remainder = seconds % 60
-  if (hours) return `${hours}h ${minutes}m ${remainder}s`
-  if (minutes) return `${minutes}m ${remainder}s`
-  return `${remainder}s`
+  const format = (value: number, unit: "hour" | "minute" | "second") =>
+    new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "narrow" }).format(value)
+  const values = hours
+    ? [format(hours, "hour"), format(minutes, "minute"), format(remainder, "second")]
+    : minutes
+      ? [format(minutes, "minute"), format(remainder, "second")]
+      : [format(remainder, "second")]
+  return new Intl.ListFormat(locale, { style: "narrow", type: "unit" }).format(values)
 }
