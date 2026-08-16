@@ -1,3 +1,4 @@
+import { AgentRun } from "@opencode-ai/core/agent-run"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -18,6 +19,7 @@ const DefaultSessionHistoryLimit = 50
 
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
+    const agentRun = yield* AgentRun.Service
     const session = yield* SessionV2.Service
 
     return handlers
@@ -102,6 +104,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               ),
             ),
           }
+        }),
+      )
+      .handle(
+        "session.agentRun",
+        Effect.fn(function* (ctx) {
+          return yield* agentRun.snapshot(ctx.params.sessionID)
         }),
       )
       .handle(

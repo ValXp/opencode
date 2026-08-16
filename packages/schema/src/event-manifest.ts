@@ -1,5 +1,6 @@
 export * as EventManifest from "./event-manifest"
 
+import { AgentRun } from "./agent-run"
 import { Catalog } from "./catalog"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
@@ -34,7 +35,11 @@ import { WorktreeEvent } from "./worktree-event"
 const sessionV1DurableDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable !== undefined)
 const sessionV1LiveDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable === undefined)
 
-const coreDefinitions = Event.inventory(...sessionV1DurableDefinitions, ...SessionEvent.Definitions)
+const coreDefinitions = Event.inventory(
+  ...sessionV1DurableDefinitions,
+  ...SessionEvent.Definitions,
+  ...AgentRun.Event.Definitions,
+)
 
 const foundationDefinitions = Event.inventory(
   ...ModelsDev.Event.Definitions,

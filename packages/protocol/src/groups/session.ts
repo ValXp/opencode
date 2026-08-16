@@ -17,6 +17,7 @@ import {
   UnknownError,
 } from "../errors"
 import { Agent } from "@opencode-ai/schema/agent"
+import { AgentRun } from "@opencode-ai/schema/agent-run"
 import { Model } from "@opencode-ai/schema/model"
 import { Location } from "@opencode-ai/schema/location"
 import { Revert } from "@opencode-ai/schema/revert"
@@ -166,6 +167,21 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.get",
             summary: "Get session",
             description: "Retrieve a session by ID.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.agentRun", "/api/session/:sessionID/agent-run", {
+        params: { sessionID: Session.ID },
+        success: AgentRun.Snapshot,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.agentRun",
+            summary: "Get session agent runs",
+            description: "Retrieve the agent-run snapshot for a session.",
           }),
         ),
     )

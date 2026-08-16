@@ -48,6 +48,7 @@ export type Event =
   | EventSessionNextRevertStaged
   | EventSessionNextRevertCleared
   | EventSessionNextRevertCommitted
+  | EventAgentRunUpdated
   | EventMessagePartDelta
   | EventSessionDiff
   | EventSessionError
@@ -1188,6 +1189,13 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
+        }
+      }
+    | {
+        id: string
+        type: "agent.run.updated"
+        properties: {
+          info: AgentRunInfo
         }
       }
     | {
@@ -2899,6 +2907,7 @@ export type V2Event =
   | SessionNextRevertStaged
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
+  | AgentRunUpdated
   | MessagePartDelta
   | SessionDiff
   | SessionError
@@ -3120,6 +3129,62 @@ export type RevertState = {
   snapshot?: string
   diff?: string
   files?: Array<FileDiff>
+}
+
+export type AgentRunState =
+  | {
+      type: "running"
+    }
+  | {
+      type: "retrying"
+      attempt: number
+      message: string
+      next: number
+    }
+  | {
+      type: "succeeded"
+    }
+  | {
+      type: "failed"
+      error: string
+    }
+  | {
+      type: "cancelled"
+    }
+  | {
+      type: "interrupted"
+      reason?: string
+    }
+  | {
+      type: "unknown"
+      reason: "owner_lost" | "legacy_ambiguous" | "orphaned"
+    }
+
+export type AgentRunInfo = {
+  id: string
+  sessionID: string
+  callerSessionID: string
+  previousRunID?: string
+  source: {
+    messageID: string
+    callID: string
+  }
+  agent: string
+  description: string
+  model?: ModelRef
+  background: boolean
+  state: AgentRunState
+  activity: {
+    at: number
+    summary?: string
+  }
+  time: {
+    created: number
+    started?: number
+    updated: number
+    finished?: number
+  }
+  version: number
 }
 
 export type PermissionV2Source = {
@@ -3930,6 +3995,21 @@ export type SessionV2Info = {
   location: LocationRef
   subpath?: string
   revert?: RevertState
+}
+
+export type AgentRunNode = {
+  sessionID: string
+  parentSessionID: string
+  title: string
+  agent?: string
+  createdAt: number
+}
+
+export type AgentRunSnapshot = {
+  rootSessionID: string
+  nodes: Array<AgentRunNode>
+  active: Array<AgentRunInfo>
+  history: Array<AgentRunInfo>
 }
 
 export type PromptInputFileAttachment = {
@@ -5303,6 +5383,23 @@ export type SessionNextCompactionDelta = {
   }
 }
 
+export type AgentRunUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "agent.run.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    info: AgentRunInfo
+  }
+}
+
 export type MessagePartDelta = {
   id: string
   metadata?: {
@@ -6652,6 +6749,14 @@ export type EventSessionNextRevertCommitted = {
     timestamp: number
     sessionID: string
     messageID: string
+  }
+}
+
+export type EventAgentRunUpdated = {
+  id: string
+  type: "agent.run.updated"
+  properties: {
+    info: AgentRunInfo
   }
 }
 
@@ -11478,6 +11583,41 @@ export type V2SessionGetResponses = {
 }
 
 export type V2SessionGetResponse = V2SessionGetResponses[keyof V2SessionGetResponses]
+
+export type V2SessionAgentRunData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/agent-run"
+}
+
+export type V2SessionAgentRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionAgentRunError = V2SessionAgentRunErrors[keyof V2SessionAgentRunErrors]
+
+export type V2SessionAgentRunResponses = {
+  /**
+   * AgentRun.Snapshot
+   */
+  200: AgentRunSnapshot
+}
+
+export type V2SessionAgentRunResponse = V2SessionAgentRunResponses[keyof V2SessionAgentRunResponses]
 
 export type V2SessionSwitchAgentData = {
   body: {

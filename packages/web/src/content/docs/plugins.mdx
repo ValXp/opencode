@@ -143,6 +143,12 @@ export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree
 
 Plugins can subscribe to events as seen below in the Examples section. Here is a list of the different events available.
 
+#### Agent Run Events
+
+- `agent.run.updated`
+
+`agent.run.updated` carries `{ info: AgentRun.Info }`. It is an advisory live event, not a durable replay feed. Plugins that need a complete view should fetch `GET /api/session/:sessionID/agent-run` initially and after reconnecting, then use the event for live refreshes between snapshots.
+
 #### Command Events
 
 - `command.executed`

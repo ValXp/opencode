@@ -1,5 +1,14 @@
 # V2 Schema Changelog
 
+## 2026-08-10: Add Durable Agent Run Observability
+
+- Add the public `AgentRun` resource with durable `arun_` identities, explicit `running`, `retrying`, `succeeded`, `failed`, `cancelled`, `interrupted`, and `unknown` states, semantic activity, freshness timestamps, and resume links. AgentRun identities describe executions and remain distinct from child Session identities.
+- Mark active runs `interrupted` on controlled runtime shutdown. Abrupt owner-loss classification remains deferred until durable liveness and fencing exist, so a restart can leave an active record unresolved. Freshness remains observational and does not add a `stalled` state.
+- Add `GET /api/session/:sessionID/agent-run`, returning nodes related to the requested Session's active runs and 100 most recent terminal runs. The web panel shows the 10 most recent terminal child sessions by default.
+- Add advisory `agent.run.updated` carrying `AgentRun.Info`. It is live-only, not a durable or replayable event, and requires no durable-event version.
+- Add the `agent_run` table and lookup indexes through an additive database migration. Existing canonical Session, message, and part rows are not rewritten.
+- Regenerate the public OpenAPI plus Promise, Effect, and legacy JavaScript client surfaces for the new resource, endpoint, and event. Generated artifacts require regeneration but no handwritten compatibility layer.
+
 ## 2026-06-26: Add Finite Session History
 
 - Add `GET /api/session/:sessionID/history` and generated Promise, Effect, and legacy JavaScript client methods.

@@ -1,3 +1,4 @@
+import { AgentRun } from "@opencode-ai/core/agent-run"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
@@ -28,6 +29,7 @@ const applicationServices = LayerNode.group([
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,
+  AgentRun.node,
   SessionV2.node,
   PermissionSaved.node,
   PtyTicket.node,

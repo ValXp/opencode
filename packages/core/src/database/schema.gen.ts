@@ -57,6 +57,40 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_run\` (
+          \`id\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`caller_session_id\` text NOT NULL,
+          \`previous_run_id\` text,
+          \`source_message_id\` text NOT NULL,
+          \`source_call_id\` text NOT NULL,
+          \`agent\` text NOT NULL,
+          \`description\` text NOT NULL,
+          \`model_provider_id\` text,
+          \`model_id\` text,
+          \`model_variant\` text,
+          \`background\` integer NOT NULL,
+          \`state_type\` text NOT NULL,
+          \`state_attempt\` integer,
+          \`state_message\` text,
+          \`state_next\` integer,
+          \`state_error\` text,
+          \`state_reason\` text,
+          \`owner_id\` text,
+          \`activity_at\` integer NOT NULL,
+          \`activity_summary\` text,
+          \`activity_revision\` integer DEFAULT 0 NOT NULL,
+          \`summary_revision\` integer,
+          \`time_created\` integer NOT NULL,
+          \`time_started\` integer,
+          \`time_updated\` integer NOT NULL,
+          \`time_finished\` integer,
+          \`version\` integer DEFAULT 0 NOT NULL,
+          CONSTRAINT \`fk_agent_run_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE,
+          CONSTRAINT \`fk_agent_run_caller_session_id_session_id_fk\` FOREIGN KEY (\`caller_session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
           \`integration_id\` text,
@@ -236,6 +270,17 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`agent_run_admission_idx\` ON \`agent_run\` (\`caller_session_id\`,\`source_message_id\`,\`source_call_id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`agent_run_session_time_idx\` ON \`agent_run\` (\`session_id\`,\`time_created\`,\`id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`agent_run_active_idx\` ON \`agent_run\` (\`state_type\`,\`session_id\`,\`time_created\`,\`id\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`agent_run_owner_idx\` ON \`agent_run\` (\`owner_id\`,\`state_type\`);`)
+      yield* tx.run(`CREATE INDEX \`agent_run_history_idx\` ON \`agent_run\` (\`time_finished\`,\`id\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(

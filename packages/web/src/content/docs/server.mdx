@@ -154,6 +154,7 @@ The opencode server exposes the following APIs.
 | `DELETE` | `/session/:id`                           | Delete a session and all its data     | Returns `boolean`                                                                  |
 | `PATCH`  | `/session/:id`                           | Update session properties             | body: `{ title? }`, returns <a href={typesUrl}><code>Session</code></a>            |
 | `GET`    | `/session/:id/children`                  | Get a session's child sessions        | Returns <a href={typesUrl}><code>Session[]</code></a>                              |
+| `GET`    | `/api/session/:sessionID/agent-run`      | Get the session's agent-run snapshot  | Returns `AgentRun.Snapshot`                                                        |
 | `GET`    | `/session/:id/todo`                      | Get the todo list for a session       | Returns <a href={typesUrl}><code>Todo[]</code></a>                                 |
 | `POST`   | `/session/:id/init`                      | Analyze app and create `AGENTS.md`    | body: `{ messageID, providerID, modelID }`, returns `boolean`                      |
 | `POST`   | `/session/:id/fork`                      | Fork an existing session at a message | body: `{ messageID? }`, returns <a href={typesUrl}><code>Session</code></a>        |
@@ -165,6 +166,27 @@ The opencode server exposes the following APIs.
 | `POST`   | `/session/:id/revert`                    | Revert a message                      | body: `{ messageID, partID? }`, returns `boolean`                                  |
 | `POST`   | `/session/:id/unrevert`                  | Restore all reverted messages         | Returns `boolean`                                                                  |
 | `POST`   | `/session/:id/permissions/:permissionID` | Respond to a permission request       | body: `{ response, remember? }`, returns `boolean`                                 |
+
+#### Agent-run snapshots
+
+`GET /api/session/:sessionID/agent-run` returns a snapshot rooted at the requested session:
+
+```ts
+{
+  rootSessionID: string
+  nodes: AgentRun.Node[]
+  active: AgentRun.Info[]
+  history: AgentRun.Info[]
+}
+```
+
+`nodes` describes the nested descendant-session tree. `active` contains runs in `running` or `retrying` state, while `history` contains all terminal runs in newest-first order. Clients can apply their own display limit.
+
+Each `AgentRun.Info.id` is a durable execution identity, distinct from its child `sessionID`. A resumed child session has a new run identity and may reference the earlier run through `previousRunID`.
+
+Snapshots include every active run and at most the 100 most recent terminal runs, plus the Session nodes needed to place those runs in their descendant hierarchy.
+
+The optional `activity.summary` describes recent activity. OpenCode derives it locally by default; model-generated summaries are opt-in and can use model tokens and incur provider costs. `activity.at` is a separate freshness timestamp and must not be interpreted as an authoritative stalled signal. See [Agents](/docs/agents#statuses) for lifecycle and restart semantics.
 
 ---
 
@@ -277,6 +299,8 @@ The opencode server exposes the following APIs.
 | Method | Path     | Description                                                                   | Response                  |
 | ------ | -------- | ----------------------------------------------------------------------------- | ------------------------- |
 | `GET`  | `/event` | Server-sent events stream. First event is `server.connected`, then bus events | Server-sent events stream |
+
+The stream can emit `agent.run.updated` with `{ info: AgentRun.Info }`. This event is advisory and is not a durable replay feed. Fetch the agent-run snapshot initially and after reconnecting; use update events for live refreshes between snapshots.
 
 ---
 
