@@ -20,7 +20,7 @@ import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { focusTerminalById } from "@/pages/session/helpers"
+import { focusTerminalById, SESSION_AGENTS_TAB } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
@@ -33,6 +33,7 @@ import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { reviewTooltipKeybind } from "../command-tooltip-keybind"
 import { useTitlebarRightMount } from "../titlebar"
+import { useAgents } from "@/pages/session/agents/context"
 
 const OPEN_APPS = [
   "vscode",
@@ -146,7 +147,8 @@ export function SessionHeader() {
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
-  const { params, view } = useSessionLayout()
+  const agents = useAgents()
+  const { params, tabs, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -235,6 +237,20 @@ export function SessionHeader() {
     messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
   )
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
+    agentsCount: agents.projection().activeCount,
+    agentsLabel: language.t("settings.agents.title"),
+    agentsOpened: isDesktop()
+      ? view().reviewPanel.opened() && tabs().active() === SESSION_AGENTS_TAB
+      : agents.mobileDrawerOpen(),
+    agentsControls: isDesktop() ? "review-panel" : "session-agents-drawer",
+    onAgentsOpen: () => {
+      if (!isDesktop()) {
+        agents.setMobileDrawerOpen(true)
+        return
+      }
+      void tabs().open(SESSION_AGENTS_TAB)
+      if (!view().reviewPanel.opened()) view().reviewPanel.open()
+    },
     statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
     reviewLabel: language.t("command.review.toggle"),
@@ -517,6 +533,11 @@ export function SessionHeader() {
 }
 
 type SessionHeaderV2ActionsState = {
+  agentsCount: number
+  agentsLabel: string
+  agentsOpened: boolean
+  agentsControls: string
+  onAgentsOpen: () => void
   statusVisible: boolean
   statusLabel: string
   reviewLabel: string
@@ -527,10 +548,29 @@ type SessionHeaderV2ActionsState = {
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
-  const language = useLanguage()
-
   return (
     <div class="flex items-center gap-2">
+      <TooltipV2 class="shrink-0" placement="bottom" value={props.state.agentsLabel}>
+        <IconButtonV2
+          type="button"
+          variant="ghost-muted"
+          size="large"
+          class="!w-11 shrink-0"
+          data-slot="session-agents-header-trigger"
+          data-active-count={props.state.agentsCount}
+          aria-label={`${props.state.agentsLabel}: ${props.state.agentsCount}`}
+          aria-expanded={props.state.agentsOpened}
+          aria-controls={props.state.agentsControls}
+          state={props.state.agentsOpened ? "pressed" : undefined}
+          onClick={props.state.onAgentsOpen}
+          icon={
+            <span class="flex items-center gap-1">
+              <Icon name="subagent" size="small" />
+              <span class="min-w-2.5 text-11-medium tabular-nums">{props.state.agentsCount}</span>
+            </span>
+          }
+        />
+      </TooltipV2>
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />

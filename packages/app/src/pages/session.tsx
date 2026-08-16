@@ -103,6 +103,8 @@ import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/sessio
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
+import { AgentsProvider } from "./session/agents/context"
+import { SessionAgentsDrawer } from "./session/agents/drawer"
 
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
@@ -319,7 +321,9 @@ function SessionProviders(props: ParentProps) {
     <TerminalProvider>
       <FileProvider>
         <PromptProvider>
-          <CommentsProvider>{props.children}</CommentsProvider>
+          <AgentsProvider>
+            <CommentsProvider>{props.children}</CommentsProvider>
+          </AgentsProvider>
         </PromptProvider>
       </FileProvider>
     </TerminalProvider>
@@ -504,9 +508,8 @@ export default function Page() {
   const centered = createMemo(() => isDesktop() && (newSessionDesign() || !desktopReviewOpen()))
   const desktopV2PanelLayout = createMemo(() =>
     sessionPanelLayout({
-      review: desktopV2ReviewOpen(),
+      workspace: desktopV2ReviewOpen() || desktopFileTreeOpen(),
       terminal: desktopTerminalOpen(),
-      files: desktopFileTreeOpen(),
     }),
   )
 
@@ -2249,6 +2252,7 @@ export default function Page() {
   return (
     <SessionRouteFrame>
       <SessionHeader />
+      <SessionAgentsDrawer />
       <div
         ref={panelRow}
         class="flex-1 min-h-0 flex flex-col md:flex-row"

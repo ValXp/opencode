@@ -1,6 +1,9 @@
 import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
+import { AGENT_RUN_ENGLISH } from "./agent-run"
+
 export const dict = {
+  ...AGENT_RUN_ENGLISH,
   ...DESKTOP_NATIVE_ENGLISH,
   "command.category.suggested": "Suggested",
   "command.category.view": "View",

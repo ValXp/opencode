@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  SESSION_AGENTS_TAB,
   SESSION_OPEN_FILE_TAB,
   closeSessionTab,
   openSessionTab,
@@ -13,6 +14,14 @@ const state = (all: string[], active?: string, preview?: string): SessionTabStat
 })
 
 describe("previewSessionTab", () => {
+  test("never makes Agents replaceable by a file preview", () => {
+    const agents = previewSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_AGENTS_TAB)
+
+    expect(previewSessionTab(agents, "file://b.ts")).toEqual(
+      state([SESSION_AGENTS_TAB, "file://b.ts"], "file://b.ts", "file://b.ts"),
+    )
+  })
+
   test("appends the Open File placeholder", () => {
     expect(previewSessionTab(state(["file://a.ts"], "file://a.ts"), SESSION_OPEN_FILE_TAB)).toEqual(
       state(["file://a.ts", SESSION_OPEN_FILE_TAB], SESSION_OPEN_FILE_TAB, SESSION_OPEN_FILE_TAB),
@@ -45,6 +54,12 @@ describe("previewSessionTab", () => {
 })
 
 describe("openSessionTab", () => {
+  test("persists Agents without replacing the file preview", () => {
+    expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_AGENTS_TAB)).toEqual(
+      state([SESSION_AGENTS_TAB, "file://a.ts"], SESSION_AGENTS_TAB, "file://a.ts"),
+    )
+  })
+
   test("pins the current preview", () => {
     expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), "file://a.ts")).toEqual(
       state(["file://a.ts"], "file://a.ts"),
@@ -71,6 +86,12 @@ describe("openSessionTab", () => {
 })
 
 describe("closeSessionTab", () => {
+  test("ignores close requests for the persistent Agents workspace", () => {
+    const current = state([SESSION_AGENTS_TAB, "file://a.ts"], SESSION_AGENTS_TAB)
+
+    expect(closeSessionTab(current, SESSION_AGENTS_TAB)).toBe(current)
+  })
+
   test("clears preview metadata and selects the left neighbor", () => {
     expect(
       closeSessionTab(

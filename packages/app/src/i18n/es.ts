@@ -1,4 +1,7 @@
+import { AGENT_RUN_ENGLISH } from "./agent-run"
+
 export const dict = {
+  ...AGENT_RUN_ENGLISH,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Archivo",
   "desktop.menu.edit": "Editar",

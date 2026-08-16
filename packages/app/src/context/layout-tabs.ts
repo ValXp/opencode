@@ -1,3 +1,4 @@
+export const SESSION_AGENTS_TAB = "agents"
 export const SESSION_OPEN_FILE_TAB = "open-file"
 
 export type SessionTabs = {
@@ -14,6 +15,8 @@ const sessionTabPreview = (current: SessionTabState) =>
   current.preview ?? (current.tabs.all.includes(SESSION_OPEN_FILE_TAB) ? SESSION_OPEN_FILE_TAB : undefined)
 
 export function previewSessionTab(current: SessionTabState, tab: string): SessionTabState {
+  if (tab === SESSION_AGENTS_TAB) return openSessionTab(current, tab)
+
   const preview = sessionTabPreview(current)
   const previewIndex = preview ? current.tabs.all.indexOf(preview) : -1
   const existingIndex = current.tabs.all.indexOf(tab)
@@ -49,7 +52,7 @@ export function openSessionTab(current: SessionTabState, tab: string): SessionTa
     }
   }
 
-  if (tab === "context") {
+  if (tab === "context" || tab === SESSION_AGENTS_TAB) {
     return {
       tabs: { all: [tab, ...current.tabs.all.filter((item) => item !== tab)], active: tab },
       preview,
@@ -80,6 +83,8 @@ export function openSessionTab(current: SessionTabState, tab: string): SessionTa
 }
 
 export function closeSessionTab(current: SessionTabState, tab: string): SessionTabState {
+  if (tab === SESSION_AGENTS_TAB) return current
+
   if (tab === "review") {
     if (current.tabs.active !== tab) return current
     return {

@@ -1,4 +1,7 @@
+import { AGENT_RUN_ENGLISH } from "./agent-run"
+
 export const dict = {
+  ...AGENT_RUN_ENGLISH,
   "command.category.suggested": "Ehdotetut",
   "command.category.view": "Näytä",
   "command.category.project": "Projekti",

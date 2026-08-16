@@ -1,4 +1,7 @@
+import { AGENT_RUN_ENGLISH } from "./agent-run"
+
 export const dict: Record<string, string> = {
+  ...AGENT_RUN_ENGLISH,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "ගොනුව",
   "desktop.menu.edit": "සංස්කරණය කරන්න",

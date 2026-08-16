@@ -100,6 +100,16 @@ View and manage your sessions from the homepage. You can see active sessions and
 
 ![OpenCode Web - Active Session](../../assets/web/web-homepage-active-session.png)
 
+### Agents
+
+Open the **Agents** tab in the existing right workspace to monitor delegated work for the current session. Its badge shows the number of active runs across direct children and nested descendants.
+
+The panel always includes active runs and shows the 10 most recent terminal child sessions by default. Choose **Show history** to reveal older terminal sessions. Expand a row to inspect its details, or choose **Open session** to navigate to its child session.
+
+Each row can show an activity summary and, separately, **No activity for N** freshness. A long freshness interval does not establish that a run is stalled; the [AgentRun status](/docs/agents#statuses) remains authoritative. Summaries are local by default; model-generated summaries require explicit opt-in and can use model tokens and incur provider costs.
+
+On mobile, the active-count badge opens the Agents panel in a right-side drawer.
+
 ### Server Status
 
 Click "See Servers" to view connected servers and their status.

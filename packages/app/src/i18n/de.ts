@@ -2,7 +2,10 @@ import { dict as en } from "./en"
 
 type Keys = keyof typeof en
 
+import { AGENT_RUN_ENGLISH } from "./agent-run"
+
 export const dict = {
+  ...AGENT_RUN_ENGLISH,
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",

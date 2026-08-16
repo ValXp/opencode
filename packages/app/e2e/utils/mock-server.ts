@@ -28,6 +28,7 @@ export interface MockServerConfig {
   fileContent?: (path: string) => unknown | Promise<unknown>
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown | Promise<unknown>
   sessionStatus?: Record<string, unknown> | (() => Record<string, unknown>)
+  agentRun?: (sessionID: string) => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -216,6 +217,11 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
           ),
         ),
       })
+    }
+    const agentRunMatch = path.match(/^\/api\/session\/([^/]+)\/agent-run$/)
+    if (agentRunMatch && config.agentRun) {
+      const result = await config.agentRun(agentRunMatch[1])
+      return json(route, result.body, undefined, result.status)
     }
     if (/^\/api\/session\/[^/]+\/shell$/.test(path) && route.request().method() === "POST") {
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
