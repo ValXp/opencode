@@ -1,4 +1,5 @@
 import { AgentRun } from "@opencode-ai/core/agent-run"
+import { AgentV2 } from "@opencode-ai/core/agent"
 import { EventV2 } from "@opencode-ai/core/event"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { BackgroundJob } from "@/background/job"
@@ -6,8 +7,9 @@ import { SessionRunState } from "@/session/run-state"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { afterEach, describe, expect } from "bun:test"
-import { DateTime, Deferred, Effect, Exit, Schema } from "effect"
+import { Cause, DateTime, Deferred, Effect, Exit, Schema } from "effect"
 import type { SessionPrompt } from "../../src/session/prompt"
+import { PartID } from "../../src/session/schema"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { disposeAllInstances } from "../fixture/fixture"
 import { background, defer, it, reply, schedulingFailure, seed, stubOps, taskJobID } from "./task.fixture"
@@ -202,8 +204,125 @@ describe("tool.task", () => {
       expect(replayed.metadata.sessionId).toBe(first.metadata.sessionId)
       expect(replayed.metadata.runId).toBe(first.metadata.runId)
       expect(first.output).toContain("original result")
-      expect(replayed.output).not.toContain("original result")
-      expect(replayed.output).not.toContain("<task_result>")
+      expect(replayed.output).toBe(first.output)
+    }),
+  )
+
+  it.instance("durably replays settled foreground output and errors without local jobs", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runs = yield* AgentRun.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let prompts = 0
+      const promptOps = stubOps({
+        onPrompt: () => {
+          prompts += 1
+        },
+      })
+
+      const successCallID = "call_durable_success"
+      const successChild = yield* sessions.create({ parentID: chat.id, title: "Successful child" })
+      const success = yield* runs.admit({
+        sessionID: successChild.id,
+        callerSessionID: chat.id,
+        source: { messageID: SessionMessage.ID.make(assistant.id), callID: successCallID },
+        agent: AgentV2.ID.make("general"),
+        description: "durable success",
+        background: false,
+        ownerID: "test-process",
+      })
+      yield* runs.transition({ id: success.info.id, ownerID: "test-process", state: { type: "succeeded" } })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: assistant.id,
+        type: "tool",
+        callID: successCallID,
+        tool: "task",
+        state: {
+          status: "completed",
+          input: {},
+          output: "persisted exact output",
+          title: "durable success",
+          metadata: { runId: success.info.id },
+          time: { start: 1, end: 2 },
+        },
+      })
+
+      const successReplay = yield* def.execute(
+        { description: "durable success", prompt: "do not run", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          callID: successCallID,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(successReplay.output).toBe("persisted exact output")
+
+      const errorCallID = "call_durable_error"
+      const errorChild = yield* sessions.create({ parentID: chat.id, title: "Failed child" })
+      const failed = yield* runs.admit({
+        sessionID: errorChild.id,
+        callerSessionID: chat.id,
+        source: { messageID: SessionMessage.ID.make(assistant.id), callID: errorCallID },
+        agent: AgentV2.ID.make("general"),
+        description: "durable error",
+        background: false,
+        ownerID: "test-process",
+      })
+      yield* runs.transition({
+        id: failed.info.id,
+        ownerID: "test-process",
+        state: { type: "failed", error: "persisted exact error" },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: assistant.id,
+        type: "tool",
+        callID: errorCallID,
+        tool: "task",
+        state: {
+          status: "error",
+          input: {},
+          error: "persisted exact error",
+          time: { start: 3, end: 4 },
+        },
+      })
+
+      const errorReplay = yield* def
+        .execute(
+          { description: "durable error", prompt: "do not run", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            callID: errorCallID,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(errorReplay)).toBe(true)
+      if (Exit.isFailure(errorReplay)) {
+        expect(String(Cause.squash(errorReplay.cause))).toContain("persisted exact error")
+      }
+      expect(prompts).toBe(0)
+      expect(yield* jobs.list()).toHaveLength(0)
+      expect(yield* sessions.children(chat.id)).toHaveLength(2)
     }),
   )
 

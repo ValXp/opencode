@@ -35,6 +35,10 @@ export const ref = {
 const testProvider = ProviderTest.fake({
   model: ProviderTest.model({ id: ref.modelID, providerID: ref.providerID }),
 })
+const failingSummaryProvider = ProviderTest.fake({
+  model: testProvider.model,
+  getModel: () => Effect.die(new Error("summary model unavailable")),
+})
 
 const taskNode = LayerNode.group([
   Agent.node,
@@ -65,6 +69,12 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 export const it = testEffect(layer())
 export const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+export const summaryModelFailure = testEffect(
+  LayerNode.compile(taskNode, [
+    [RuntimeFlags.node, RuntimeFlags.layer({ agentRunModelSummaries: true })],
+    [Provider.node, failingSummaryProvider.layer],
+  ]),
+)
 export const schedulingFailure = testEffect(
   LayerNode.compile(taskNode, [
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalBackgroundSubagents: true })],

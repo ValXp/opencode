@@ -10,7 +10,7 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Deferred, Effect, Exit, Schema, Scope, Semaphore } from "effect"
+import { Deferred, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
@@ -82,26 +82,6 @@ function renderOutput(input: {
   ].join("\n")
 }
 
-function replayResult(run: AgentRun.Info) {
-  const state =
-    run.state.type === "running" || run.state.type === "retrying"
-      ? "running"
-      : run.state.type === "succeeded"
-        ? "completed"
-        : "error"
-  return {
-    title: run.description,
-    metadata: {
-      parentSessionId: run.callerSessionID,
-      sessionId: run.sessionID,
-      ...(run.model ? { model: { modelID: run.model.id, providerID: run.model.providerID } } : {}),
-      runId: run.id,
-      ...(run.background ? { background: true, jobId: run.sessionID } : {}),
-    },
-    output: renderOutput({ sessionID: run.sessionID, state }),
-  }
-}
-
 function isTaskPromptOps(input: unknown): input is TaskPromptOps {
   if (typeof input !== "object" || input === null) return false
   return (
@@ -128,6 +108,53 @@ export const TaskTool = Tool.define(
     const provider = yield* Provider.Service
     const admissionLock = Semaphore.makeUnsafe(1)
 
+    const replayResult = Effect.fn("TaskTool.replayResult")(function* (run: AgentRun.Info) {
+      const result = {
+        title: run.description,
+        metadata: {
+          parentSessionId: run.callerSessionID,
+          sessionId: run.sessionID,
+          ...(run.model ? { model: { modelID: run.model.id, providerID: run.model.providerID } } : {}),
+          runId: run.id,
+          ...(run.background ? { background: true, jobId: run.sessionID } : {}),
+        },
+      }
+      const message = yield* MessageV2.get({
+        sessionID: SessionID.make(run.callerSessionID),
+        messageID: MessageID.make(run.source.messageID),
+      }).pipe(Effect.provideService(Database.Service, database), Effect.option)
+      const part = Option.getOrUndefined(message)?.parts.find(
+        (part) => part.type === "tool" && part.tool === id && part.callID === run.source.callID,
+      )
+      if (part?.type === "tool" && part.state.status === "completed") {
+        return { ...result, output: part.state.output }
+      }
+      if (part?.type === "tool" && part.state.status === "error") {
+        return yield* Effect.fail(new Error(part.state.error))
+      }
+
+      const job = yield* background.get(run.sessionID)
+      if (job?.metadata?.runId === run.id && job.metadata.background !== true) {
+        if (job.status === "completed") {
+          return {
+            ...result,
+            output: renderOutput({ sessionID: run.sessionID, state: "completed", text: job.output ?? "" }),
+          }
+        }
+        if (job.status === "error") return yield* Effect.fail(new Error(job.error ?? "Task failed"))
+        if (job.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+      }
+      if (!run.background && run.state.type === "failed") return yield* Effect.fail(new Error(run.state.error))
+
+      const state =
+        run.state.type === "running" || run.state.type === "retrying"
+          ? "running"
+          : run.state.type === "succeeded"
+            ? "completed"
+            : "error"
+      return { ...result, output: renderOutput({ sessionID: run.sessionID, state }) }
+    })
+
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
@@ -139,7 +166,7 @@ export const TaskTool = Tool.define(
         callID: ctx.callID ?? MessageID.ascending(),
       }
       const existing = yield* agentRuns.findBySource({ callerSessionID: ctx.sessionID, source })
-      if (existing) return replayResult(existing)
+      if (existing) return yield* replayResult(existing)
 
       const cfg = yield* config.get()
       const runInBackground = params.background === true
@@ -196,6 +223,9 @@ export const TaskTool = Tool.define(
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }
+      const summaryModel = flags.agentRunModelSummaries
+        ? yield* provider.getModel(model.providerID, model.modelID)
+        : undefined
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
@@ -239,10 +269,6 @@ export const TaskTool = Tool.define(
           ...(runInBackground ? { background: true, jobId: nextSession.id } : {}),
         },
       })
-      const summaryModel = flags.agentRunModelSummaries
-        ? yield* provider.getModel(model.providerID, model.modelID)
-        : undefined
-
       const runTask = Effect.fn("TaskTool.runTask")((runID: AgentRun.ID) =>
         agentRuns.execute({
           id: runID,
@@ -408,7 +434,7 @@ export const TaskTool = Tool.define(
           }),
         ),
       )
-      if (claim.type === "replayed") return replayResult(claim.info)
+      if (claim.type === "replayed") return yield* replayResult(claim.info)
 
       const metadata = claim.metadata
       if (claim.extended) {

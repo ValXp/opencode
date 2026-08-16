@@ -13,13 +13,65 @@ import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { disposeAllInstances } from "../fixture/fixture"
-import { defer, it, ref, reply, seed, stubOps } from "./task.fixture"
+import { defer, it, ref, reply, seed, stubOps, summaryModelFailure } from "./task.fixture"
 
 afterEach(async () => {
   await disposeAllInstances()
 })
 
 describe("tool.task", () => {
+  summaryModelFailure.instance("model-summary lookup fails before creating or admitting a child", () =>
+    Effect.gen(function* () {
+      const runs = yield* AgentRun.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const callID = "call_summary_model_failure"
+      let metadataUpdates = 0
+      let prompts = 0
+
+      const exit = yield* def
+        .execute(
+          {
+            description: "fail model lookup",
+            prompt: "do not create a child",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            callID,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: {
+              promptOps: stubOps({
+                onPrompt: () => {
+                  prompts += 1
+                },
+              }),
+            },
+            messages: [],
+            metadata: () => Effect.sync(() => (metadataUpdates += 1)),
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("summary model unavailable")
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
+      expect(
+        yield* runs.findBySource({
+          callerSessionID: chat.id,
+          source: { messageID: SessionMessage.ID.make(assistant.id), callID },
+        }),
+      ).toBeUndefined()
+      expect(prompts).toBe(0)
+      expect(metadataUpdates).toBe(0)
+    }),
+  )
+
   it.instance(
     "description sorts subagents by name and is stable across calls",
     () =>
