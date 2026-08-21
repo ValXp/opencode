@@ -67,7 +67,11 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
     if (!sessionID) {
       return httpFetch(input, httpInit)
     }
-    const key = `${sessionID}:conversation`
+    const key = JSON.stringify([
+      sessionID,
+      internalHeaders.originator ?? "",
+      internalHeaders["x-codex-routing-hint"] ?? "",
+    ])
 
     const entry = pool.get(key) ?? { lastUsedAt: Date.now(), busy: false, fallback: false, streamFailures: 0 }
     pool.set(key, entry)
@@ -185,11 +189,11 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
   }
 
   function remove(sessionID: string) {
-    const key = `${sessionID}:conversation`
-    const entry = pool.get(key)
-    if (!entry) return
-    invalidate(entry)
-    pool.delete(key)
+    for (const [key, entry] of pool) {
+      if ((JSON.parse(key) as [string])[0] !== sessionID) continue
+      invalidate(entry)
+      pool.delete(key)
+    }
   }
 
   return Object.assign(websocketFetch, { close, remove })

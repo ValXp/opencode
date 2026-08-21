@@ -12,8 +12,11 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
+const CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
+const CODEX_CLI_ORIGINATOR = "codex_cli_rs"
 const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
 const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
+const GPT_5_6_CODEX_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
 
 interface PkceCodes {
   verifier: string
@@ -83,6 +86,22 @@ export function extractResidency(token: string): string | undefined {
     claims?.["https://api.openai.com/auth"]?.chatgpt_compute_residency ?? claims?.chatgpt_compute_residency
   if (!residency || residency === "no_constraint") return undefined
   return residency
+}
+
+function buildRoutingHint(body: BodyInit | null | undefined) {
+  if (typeof body !== "string") return
+  const value = (() => {
+    try {
+      const parsed: unknown = JSON.parse(body)
+      return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  const model = value?.model
+  if (typeof model !== "string" || !model || /[^\x21-\x7e]|[;=]/.test(model)) return
+  const tier = value?.service_tier === "fast" ? "priority" : value?.service_tier
+  return tier === "priority" || tier === "flex" ? `model=${model};tier=${tier}` : `model=${model}`
 }
 
 function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string): string {
@@ -313,7 +332,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                   cache: { read: 0, write: 0 },
                 },
                 limit:
-                  model.id.includes("gpt-5.5") || model.id.includes("gpt-5.6")
+                  model.id.includes("gpt-5.5") || GPT_5_6_CODEX_MODELS.has(model.api.id)
                     ? {
                         context: 400_000,
                         input: 272_000,
@@ -424,6 +443,16 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             if (rewrite) {
               const residency = extractResidency(currentAuth.access)
               if (residency) headers.set("x-openai-internal-codex-residency", residency)
+            }
+            headers.delete(CODEX_ROUTING_HINT_HEADER)
+            if (parsed.pathname.includes("/v1/responses")) {
+              headers.set("originator", "opencode")
+              const routingHint = buildRoutingHint(init?.body)
+              if (routingHint) {
+                headers.set(CODEX_ROUTING_HINT_HEADER, routingHint)
+                // The ChatGPT backend currently gates Fast routing on the Codex CLI originator.
+                if (routingHint.endsWith(";tier=priority")) headers.set("originator", CODEX_CLI_ORIGINATOR)
+              }
             }
 
             const requestInit = {

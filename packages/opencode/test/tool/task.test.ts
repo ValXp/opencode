@@ -1,6 +1,7 @@
 import { AgentRun } from "@opencode-ai/core/agent-run"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable } from "@opencode-ai/core/session/sql"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"

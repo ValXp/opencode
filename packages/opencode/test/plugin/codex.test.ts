@@ -243,7 +243,6 @@ describe("plugin.codex", () => {
         }) as never,
       {} as never,
     )
-
     await loaded.fetch!("https://api.openai.com/v1/responses")
     await loaded.fetch!(new URL("/other", server.url))
 
@@ -283,6 +282,131 @@ describe("plugin.codex", () => {
     await hooks.dispose?.()
   })
 
+  test("derives Codex routing hints alongside residency", async () => {
+    const requests: Array<{ originator: string | null; routingHint: string | null; residency: string | null }> = []
+    using server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push({
+          originator: request.headers.get("originator"),
+          routingHint: request.headers.get("x-codex-routing-hint"),
+          residency: request.headers.get("x-openai-internal-codex-residency"),
+        })
+        return new Response("{}")
+      },
+    })
+    const hooks = await CodexAuthPlugin({} as never, {
+      codexApiEndpoint: new URL("/backend-api/codex/responses", server.url).toString(),
+    })
+    const loaded = await hooks.auth!.loader!(
+      async () =>
+        ({
+          type: "oauth",
+          refresh: "refresh",
+          access: createTestJwt({
+            "https://api.openai.com/auth": { chatgpt_compute_residency: "eu" },
+          }),
+          expires: Date.now() + 60_000,
+        }) as never,
+      {} as never,
+    )
+    const send = (serviceTier?: string, model = "gpt-5.6-sol") =>
+      loaded.fetch!("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          originator: "caller-supplied",
+          "x-codex-routing-hint": "caller-supplied",
+        },
+        body: JSON.stringify({
+          model,
+          ...(serviceTier && { service_tier: serviceTier }),
+        }),
+      })
+
+    await send()
+    await send("priority")
+    await send("fast")
+    await send("flex")
+    await send("priority", "gpt-5.6-sol-😀")
+
+    expect(requests).toEqual([
+      { originator: "opencode", routingHint: "model=gpt-5.6-sol", residency: "eu" },
+      { originator: "codex_cli_rs", routingHint: "model=gpt-5.6-sol;tier=priority", residency: "eu" },
+      { originator: "codex_cli_rs", routingHint: "model=gpt-5.6-sol;tier=priority", residency: "eu" },
+      { originator: "opencode", routingHint: "model=gpt-5.6-sol;tier=flex", residency: "eu" },
+      { originator: "opencode", routingHint: null, residency: "eu" },
+    ])
+  })
+
+  test("keys OAuth websocket handshakes by routing identity", async () => {
+    const httpServer = createServer()
+    const webSocketServer = new WebSocketServer({ server: httpServer })
+    const headers: Array<{ originator?: string; routingHint?: string; residency?: string }> = []
+    webSocketServer.on("connection", (socket, request) => {
+      headers.push({
+        originator: request.headers.originator?.toString(),
+        routingHint: request.headers["x-codex-routing-hint"]?.toString(),
+        residency: request.headers["x-openai-internal-codex-residency"]?.toString(),
+      })
+      socket.on("message", () => {
+        socket.send(JSON.stringify({ type: "response.completed", response: { id: "response_test" } }))
+      })
+    })
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve))
+    const address = httpServer.address()
+    if (!address || typeof address === "string") throw new Error("Failed to start websocket server")
+    const hooks = await CodexAuthPlugin({} as never, {
+      codexApiEndpoint: `http://127.0.0.1:${address.port}/backend-api/codex/responses`,
+      experimentalWebSockets: true,
+    })
+
+    try {
+      const loaded = await hooks.auth!.loader!(
+        async () =>
+          ({
+            type: "oauth",
+            refresh: "refresh",
+            access: createTestJwt({
+              "https://api.openai.com/auth": { chatgpt_compute_residency: "eu" },
+            }),
+            expires: Date.now() + 60_000,
+          }) as never,
+        {} as never,
+      )
+      const send = async (serviceTier?: string, model = "gpt-5.6-sol") => {
+        const response = await loaded.fetch!("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: { originator: "opencode", "session-id": "session_test" },
+          body: JSON.stringify({
+            model,
+            ...(serviceTier && { service_tier: serviceTier }),
+            stream: true,
+          }),
+        })
+        expect(await response.text()).toContain("data: [DONE]")
+      }
+
+      await send()
+      await send("flex")
+      await send("priority")
+      await send("fast")
+      await send(undefined, "gpt-5.6-terra")
+
+      expect(headers).toEqual([
+        { originator: "opencode", routingHint: "model=gpt-5.6-sol", residency: "eu" },
+        { originator: "opencode", routingHint: "model=gpt-5.6-sol;tier=flex", residency: "eu" },
+        { originator: "codex_cli_rs", routingHint: "model=gpt-5.6-sol;tier=priority", residency: "eu" },
+        { originator: "opencode", routingHint: "model=gpt-5.6-terra", residency: "eu" },
+      ])
+    } finally {
+      await hooks.dispose?.()
+      await new Promise<void>((resolve, reject) =>
+        webSocketServer.close((error) => (error ? reject(error) : resolve())),
+      )
+      await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
   test("filters unsupported modes and uses Codex context limits for OAuth GPT models", async () => {
     const hooks = await CodexAuthPlugin({} as never)
     const limit = { context: 1_050_000, input: 922_000, output: 128_000 }
@@ -308,6 +432,13 @@ describe("plugin.codex", () => {
           cost: {},
           options: { reasoningEffort: "high" },
         },
+        "gpt-5.6-display-name": {
+          id: "gpt-5.6-display-name",
+          api: { id: "gpt-5.7" },
+          limit,
+          cost: {},
+          options: {},
+        },
       },
     }
 
@@ -320,7 +451,8 @@ describe("plugin.codex", () => {
     expect(models["gpt-5.6-luna"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
     expect(models["gpt-5.4-pro"]).toBeUndefined()
     expect(models["gpt-5.7-pro"]).toBeDefined()
-    expect(models["gpt-5.6-sol-high"]).toBeDefined()
+    expect(models["gpt-5.6-sol-high"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    expect(models["gpt-5.6-display-name"]?.limit).toEqual(limit)
     expect(await hooks.provider!.models!(provider as never, { auth: { type: "api" } } as never)).toBe(
       provider.models as never,
     )

@@ -241,18 +241,26 @@ describe("plugin.openai.ws-pool", () => {
     let connections = 0
     await using server = await createWebSocketServer((socket) => {
       connections += 1
-      socket.once("message", () => socket.close(1009, "payload too large"))
+      socket.once("message", () => {
+        if (connections === 1) {
+          socket.close(1009, "payload too large")
+          return
+        }
+        socket.send(JSON.stringify({ type: "response.completed", response: { id: "resp_other_route" } }))
+      })
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
     })
 
-    const first = await fetch(server.url, streamRequest())
-    const second = await fetch(server.url, streamRequest())
+    const first = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-sol" }))
+    const second = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-sol" }))
+    const otherRoute = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-terra" }))
 
     expect(await first.text()).toBe("http")
     expect(await second.text()).toBe("http")
-    expect(connections).toBe(1)
+    expect(await otherRoute.text()).toContain("data: [DONE]")
+    expect(connections).toBe(2)
     expect(server.httpRequests).toHaveLength(2)
     fetch.close()
   })
@@ -277,12 +285,12 @@ describe("plugin.openai.ws-pool", () => {
     fetch.close()
   })
 
-  test("terminates active websocket connections when their session is deleted", async () => {
+  test("terminates all routing-keyed websocket connections when their session is deleted", async () => {
     let connections = 0
     await using server = await createWebSocketServer((socket) => {
       connections += 1
       socket.once("message", () => {
-        if (connections === 1) {
+        if (connections <= 2) {
           socket.send(JSON.stringify({ type: "response.output_text.delta", delta: "started" }))
           return
         }
@@ -293,15 +301,18 @@ describe("plugin.openai.ws-pool", () => {
       url: server.url,
     })
 
-    const first = await fetch(server.url, streamRequest())
+    const first = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-sol" }))
     const firstText = first.text()
+    const second = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-terra" }))
+    const secondText = second.text()
     fetch.remove("session-1")
     expect((await readTextError(firstText)).message).toContain("WebSocket closed before response.completed")
+    expect((await readTextError(secondText)).message).toContain("WebSocket closed before response.completed")
 
-    const second = await fetch(server.url, streamRequest())
+    const afterRemove = await fetch(server.url, streamRequest({ "x-codex-routing-hint": "model=gpt-5.6-sol" }))
 
-    expect(await second.text()).toContain("data: [DONE]")
-    expect(connections).toBe(2)
+    expect(await afterRemove.text()).toContain("data: [DONE]")
+    expect(connections).toBe(3)
     fetch.close()
   })
 
