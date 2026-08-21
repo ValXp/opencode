@@ -49,6 +49,7 @@ import { FileTabContent } from "@/pages/session/file-tabs"
 import {
   SESSION_AGENTS_TAB,
   SESSION_OPEN_FILE_TAB,
+  SESSION_PRESENT_PAGE_TAB,
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
@@ -56,6 +57,7 @@ import {
   type Sizing,
 } from "@/pages/session/helpers"
 import { SessionAgentsPanel } from "@/pages/session/agents/drawer"
+import { SessionPresentPagePanel, usePresentPageRegistry } from "@/pages/session/present-page-panel"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/session/v2/session-file-browser-tab"
@@ -94,6 +96,8 @@ export function SessionSidePanel(props: {
   const sdk = useSDK()
   const { sessionKey, tabs, view, params } = useSessionLayout()
   const projectDirectory = createMemo(() => sdk().directory)
+  const presentPageRegistry = usePresentPageRegistry()
+  const presentPageCount = createMemo(() => presentPageRegistry().pages.length)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const shown = settings.visibility.fileTree
@@ -186,6 +190,7 @@ export function SessionSidePanel(props: {
   })
   const contextOpen = tabState.contextOpen
   const agentsOpen = tabState.agentsOpen
+  const presentPageOpen = tabState.presentPageOpen
   const openFileOpen = tabState.openFileOpen
   const panelTabs = tabState.panelTabs
   const openedTabs = tabState.openedTabs
@@ -221,6 +226,11 @@ export function SessionSidePanel(props: {
   }
   const activateTab = (value: string) => {
     const next = normalizeTab(value)
+    if (next === SESSION_PRESENT_PAGE_TAB) {
+      openReviewPanel()
+      void tabs().open(next)
+      return
+    }
     const path = file.pathFromTab(next)
     if (path) void file.load(path)
     openReviewPanel()
@@ -242,7 +252,13 @@ export function SessionSidePanel(props: {
   })
   const fileBrowserVisible = createMemo(() => {
     const active = activeTab()
-    return active !== "review" && active !== "context" && active !== SESSION_AGENTS_TAB && active !== "empty"
+    return (
+      active !== "review" &&
+      active !== "context" &&
+      active !== SESSION_AGENTS_TAB &&
+      active !== SESSION_PRESENT_PAGE_TAB &&
+      active !== "empty"
+    )
   })
   const openFileKeybind = createMemo(() => command.keybindParts("file.open"))
   const closeTabKeybind = createMemo(() => command.keybindParts("tab.close"))
@@ -376,6 +392,15 @@ export function SessionSidePanel(props: {
                                   <div class="flex items-center gap-1.5">
                                     <Icon name="subagent" size="small" />
                                     <span>{language.t("settings.agents.title")}</span>
+                                  </div>
+                                </Tabs.Trigger>
+                              </Show>
+                              <Show when={presentPageCount() > 0 || presentPageOpen()}>
+                                <Tabs.Trigger value={SESSION_PRESENT_PAGE_TAB}>
+                                  <div class="flex items-center gap-1.5">
+                                    <Icon name="window-cursor" size="small" />
+                                    <span>{language.t("session.presentPage.title")}</span>
+                                    <span>{presentPageCount()}</span>
                                   </div>
                                 </Tabs.Trigger>
                               </Show>
@@ -523,6 +548,15 @@ export function SessionSidePanel(props: {
                             </Tabs.Content>
                           </Show>
 
+                          <Show when={activeTab() === SESSION_PRESENT_PAGE_TAB}>
+                            <Tabs.Content
+                              value={SESSION_PRESENT_PAGE_TAB}
+                              class="flex flex-col h-full overflow-hidden contain-strict"
+                            >
+                              <SessionPresentPagePanel class="h-full" />
+                            </Tabs.Content>
+                          </Show>
+
                           <Show when={activeFileTab()} keyed>
                             {(tab) => <FileTabContent tab={tab} />}
                           </Show>
@@ -605,6 +639,15 @@ export function SessionSidePanel(props: {
                                 <div class="flex items-center gap-1.5">
                                   <Icon name="subagent" size="small" />
                                   <span>{language.t("settings.agents.title")}</span>
+                                </div>
+                              </Tabs.Trigger>
+                            </Show>
+                            <Show when={presentPageCount() > 0 || presentPageOpen()}>
+                              <Tabs.Trigger value={SESSION_PRESENT_PAGE_TAB}>
+                                <div class="flex items-center gap-1.5">
+                                  <Icon name="window-cursor" size="small" />
+                                  <span>{language.t("session.presentPage.title")}</span>
+                                  <span>{presentPageCount()}</span>
                                 </div>
                               </Tabs.Trigger>
                             </Show>
@@ -769,6 +812,15 @@ export function SessionSidePanel(props: {
                             class="flex flex-col h-full overflow-hidden contain-strict"
                           >
                             <SessionAgentsPanel class="h-full" />
+                          </Tabs.Content>
+                        </Show>
+
+                        <Show when={activeTab() === SESSION_PRESENT_PAGE_TAB}>
+                          <Tabs.Content
+                            value={SESSION_PRESENT_PAGE_TAB}
+                            class="flex flex-col h-full overflow-hidden contain-strict"
+                          >
+                            <SessionPresentPagePanel class="h-full" />
                           </Tabs.Content>
                         </Show>
 

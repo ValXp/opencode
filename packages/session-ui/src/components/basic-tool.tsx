@@ -1,4 +1,16 @@
-import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js"
+import {
+  createEffect,
+  For,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  type Accessor,
+  type ComponentProps,
+  type JSX,
+} from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { createStore } from "solid-js/store"
@@ -40,6 +52,8 @@ export interface BasicToolProps {
   onTriggerClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
   onTriggerKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>
   triggerHref?: string
+  triggerTarget?: ComponentProps<"a">["target"]
+  triggerRel?: ComponentProps<"a">["rel"]
   triggerAsLink?: boolean
   clickable?: boolean
 }
@@ -270,6 +284,8 @@ export function BasicTool(props: BasicToolProps) {
         <Collapsible.Trigger
           as="a"
           href={props.triggerHref}
+          target={props.triggerTarget}
+          rel={props.triggerRel}
           role={!props.triggerHref && props.clickable ? "button" : undefined}
           tabIndex={!props.triggerHref && props.clickable ? 0 : undefined}
           data-hide-details={props.hideDetails ? "true" : undefined}

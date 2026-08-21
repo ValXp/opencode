@@ -20,7 +20,13 @@ import { migrateLegacySessionStateKeys, ServerScope, SessionStateKey } from "@/u
 import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout-helpers"
 import { requireServerKey } from "@/utils/session-route"
 import { type DraftTab, useTabs } from "./tabs"
-import { closeSessionTab, openSessionTab, previewSessionTab, type SessionTabs } from "./layout-tabs"
+import {
+  closeSessionTab,
+  isPersistentSessionTab,
+  openSessionTab,
+  previewSessionTab,
+  type SessionTabs,
+} from "./layout-tabs"
 
 export { createSessionKeyReader, ensureSessionKey, pruneSessionKeys }
 
@@ -65,6 +71,11 @@ export function getProjectAvatarVariant(key?: string): ProjectAvatarVariant {
   return "gray"
 }
 
+export type PresentPageSelection = {
+  id: string
+  href?: string
+}
+
 type SessionView = {
   scroll: Record<string, SessionScroll>
   reviewOpen?: string[]
@@ -73,6 +84,7 @@ type SessionView = {
   pendingMessage?: string
   pendingMessageAt?: number
   todoCollapsed?: boolean
+  presentPage?: PresentPageSelection
 }
 
 type TabHandoff = {
@@ -817,6 +829,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const file = s().reviewFile
           if (typeof file === "string") return file
         })
+        const selectedPresentPage = createMemo(() => s().presentPage)
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
         const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? DEFAULT_REVIEW_PANEL_OPENED)
         const reviewPanelSource = createMemo(() => (reviewPanelOpened() ? ephemeral.reviewPanelSource : "other"))
@@ -872,6 +885,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               } else {
                 setStore("sessionView", session, "todoCollapsed", collapsed)
               }
+            },
+          },
+          presentPage: {
+            selected: selectedPresentPage,
+            select(id: string, href?: string) {
+              const session = key()
+              const current = store.sessionView[session]
+              const next = href ? { id, href } : { id }
+              if (!current) {
+                setStore("sessionView", session, { scroll: {}, presentPage: next })
+                prune(session)
+                return
+              }
+              if (current.presentPage?.id === id && current.presentPage.href === href) return
+              setStore("sessionView", session, "presentPage", next)
+              prune(session)
             },
           },
           terminal: {
@@ -1063,6 +1092,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const session = key()
             const current = store.sessionTabs[session]
             if (!current) return
+            if (isPersistentSessionTab(tab)) return
             const index = current.all.findIndex((f) => f === tab)
             if (index === -1) return
             setStore(

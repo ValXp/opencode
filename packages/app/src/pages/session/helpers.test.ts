@@ -4,6 +4,7 @@ import { createStore } from "solid-js/store"
 import {
   SESSION_AGENTS_TAB,
   SESSION_OPEN_FILE_TAB,
+  SESSION_PRESENT_PAGE_TAB,
   createOpenReviewFile,
   createOpenSessionFileTab,
   createSessionTabs,
@@ -104,6 +105,13 @@ describe("getTabReorderIndex", () => {
     expect(getTabReorderIndex(tabs, "a", SESSION_AGENTS_TAB)).toBeUndefined()
   })
 
+  test("rejects Pages as either side of a file-tab reorder", () => {
+    const tabs = [SESSION_PRESENT_PAGE_TAB, "a", "b"]
+
+    expect(getTabReorderIndex(tabs, SESSION_PRESENT_PAGE_TAB, "b")).toBeUndefined()
+    expect(getTabReorderIndex(tabs, "a", SESSION_PRESENT_PAGE_TAB)).toBeUndefined()
+  })
+
   test("returns target index for valid drag reorder", () => {
     expect(getTabReorderIndex(["a", "b", "c"], "a", "c")).toBe(2)
   })
@@ -131,6 +139,29 @@ describe("createSessionTabs", () => {
       expect(result.panelTabs()).toEqual(["file://src/a.ts"])
       expect(result.openedTabs()).toEqual(["file://src/a.ts"])
       expect(result.activeTab()).toBe(SESSION_AGENTS_TAB)
+      expect(result.activeFileTab()).toBeUndefined()
+      expect(result.closableTab()).toBeUndefined()
+      dispose()
+    })
+  })
+
+  test("exposes Pages as a reserved active workspace instead of a file tab", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: SESSION_PRESENT_PAGE_TAB as string | undefined,
+        all: [SESSION_PRESENT_PAGE_TAB, "file://src/a.ts"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+        normalizeTab: (tab) => tab,
+      })
+
+      expect(result.presentPageOpen()).toBe(true)
+      expect(result.panelTabs()).toEqual(["file://src/a.ts"])
+      expect(result.openedTabs()).toEqual(["file://src/a.ts"])
+      expect(result.activeTab()).toBe(SESSION_PRESENT_PAGE_TAB)
       expect(result.activeFileTab()).toBeUndefined()
       expect(result.closableTab()).toBeUndefined()
       dispose()

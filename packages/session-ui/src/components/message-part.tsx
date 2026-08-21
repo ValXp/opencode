@@ -66,6 +66,7 @@ import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+import { handlePresentPageMarkdownClick, PresentPageTool } from "./present-page-tool"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1731,7 +1732,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   return (
     <Show when={text()}>
       <div data-component="text-part" data-timeline-part-id={part().id}>
-        <div data-slot="text-part-body">
+        <div
+          data-slot="text-part-body"
+          onClick={(event) =>
+            handlePresentPageMarkdownClick(event, data.presentPageRegistry(), data.openPresentPage)
+          }
+        >
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
@@ -1772,6 +1778,8 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
     </Show>
   )
 }
+
+ToolRegistry.register({ name: "present_page", render: PresentPageTool })
 
 ToolRegistry.register({
   name: "read",

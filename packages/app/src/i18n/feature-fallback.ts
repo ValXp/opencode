@@ -26,4 +26,11 @@ export const FEATURE_ENGLISH_FALLBACK = {
   "session.agents.details.retry": "Attempt {{attempt}} · {{message}} · Next: {{next}}",
   "session.agents.details.error": "Error: {{error}}",
   "session.agents.details.reason": "Reason: {{reason}}",
+  "session.presentPage.title": "Pages",
+  "session.presentPage.empty": "No presented pages yet",
+  "session.presentPage.selector": "Select a presented page",
+  "session.presentPage.option": "{{title}} - Revision {{revision}} - {{id}}",
+  "session.presentPage.revision": "Revision {{revision}}",
+  "session.presentPage.openExternal": "Open page in browser",
+  "session.presentPage.viewerTitle": "{{title}}, revision {{revision}}",
 }

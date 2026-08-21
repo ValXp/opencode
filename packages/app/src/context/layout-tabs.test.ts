@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   SESSION_AGENTS_TAB,
   SESSION_OPEN_FILE_TAB,
+  SESSION_PRESENT_PAGE_TAB,
   closeSessionTab,
   openSessionTab,
   previewSessionTab,
@@ -19,6 +20,14 @@ describe("previewSessionTab", () => {
 
     expect(previewSessionTab(agents, "file://b.ts")).toEqual(
       state([SESSION_AGENTS_TAB, "file://b.ts"], "file://b.ts", "file://b.ts"),
+    )
+  })
+
+  test("never makes Pages replaceable by a file preview", () => {
+    const pages = previewSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_PRESENT_PAGE_TAB)
+
+    expect(previewSessionTab(pages, "file://b.ts")).toEqual(
+      state([SESSION_PRESENT_PAGE_TAB, "file://b.ts"], "file://b.ts", "file://b.ts"),
     )
   })
 
@@ -60,6 +69,12 @@ describe("openSessionTab", () => {
     )
   })
 
+  test("persists Pages without replacing the file preview", () => {
+    expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_PRESENT_PAGE_TAB)).toEqual(
+      state([SESSION_PRESENT_PAGE_TAB, "file://a.ts"], SESSION_PRESENT_PAGE_TAB, "file://a.ts"),
+    )
+  })
+
   test("pins the current preview", () => {
     expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), "file://a.ts")).toEqual(
       state(["file://a.ts"], "file://a.ts"),
@@ -90,6 +105,12 @@ describe("closeSessionTab", () => {
     const current = state([SESSION_AGENTS_TAB, "file://a.ts"], SESSION_AGENTS_TAB)
 
     expect(closeSessionTab(current, SESSION_AGENTS_TAB)).toBe(current)
+  })
+
+  test("ignores close requests for the persistent Pages workspace", () => {
+    const current = state([SESSION_PRESENT_PAGE_TAB, "file://a.ts"], SESSION_PRESENT_PAGE_TAB)
+
+    expect(closeSessionTab(current, SESSION_PRESENT_PAGE_TAB)).toBe(current)
   })
 
   test("clears preview metadata and selects the left neighbor", () => {

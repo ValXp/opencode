@@ -2,9 +2,14 @@ import { batch, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { same } from "@/utils/same"
-import { SESSION_AGENTS_TAB, SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
+import {
+  SESSION_AGENTS_TAB,
+  SESSION_OPEN_FILE_TAB,
+  SESSION_PRESENT_PAGE_TAB,
+  isPersistentSessionTab,
+} from "@/context/layout-tabs"
 
-export { SESSION_AGENTS_TAB, SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
+export { SESSION_AGENTS_TAB, SESSION_OPEN_FILE_TAB, SESSION_PRESENT_PAGE_TAB } from "@/context/layout-tabs"
 
 const emptyTabs: string[] = []
 
@@ -36,6 +41,9 @@ export const createSessionTabs = (input: TabsInput) => {
   const agentsOpen = createMemo(
     () => input.tabs().active() === SESSION_AGENTS_TAB || input.tabs().all().includes(SESSION_AGENTS_TAB),
   )
+  const presentPageOpen = createMemo(
+    () => input.tabs().active() === SESSION_PRESENT_PAGE_TAB || input.tabs().all().includes(SESSION_PRESENT_PAGE_TAB),
+  )
   const openFileOpen = createMemo(
     () =>
       fileBrowser() &&
@@ -48,7 +56,7 @@ export const createSessionTabs = (input: TabsInput) => {
         .tabs()
         .all()
         .flatMap((tab) => {
-          if (tab === "context" || tab === "review" || tab === SESSION_AGENTS_TAB) return []
+          if (tab === "context" || tab === "review" || isPersistentSessionTab(tab)) return []
           if (tab === SESSION_OPEN_FILE_TAB && !fileBrowser()) return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
@@ -66,6 +74,7 @@ export const createSessionTabs = (input: TabsInput) => {
     const active = input.tabs().active()
     if (active === "context") return active
     if (active === SESSION_AGENTS_TAB) return active
+    if (active === SESSION_PRESENT_PAGE_TAB) return active
     if (active === SESSION_OPEN_FILE_TAB && openFileOpen()) return active
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
@@ -92,6 +101,7 @@ export const createSessionTabs = (input: TabsInput) => {
   return {
     contextOpen,
     agentsOpen,
+    presentPageOpen,
     openFileOpen,
     panelTabs,
     openedTabs,
@@ -165,7 +175,7 @@ export const createOpenSessionFileTab = (input: {
 }
 
 export const getTabReorderIndex = (tabs: readonly string[], from: string, to: string) => {
-  if (from === SESSION_AGENTS_TAB || to === SESSION_AGENTS_TAB) return
+  if (isPersistentSessionTab(from) || isPersistentSessionTab(to)) return
   const fromIndex = tabs.indexOf(from)
   const toIndex = tabs.indexOf(to)
   if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return undefined

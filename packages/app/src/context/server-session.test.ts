@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { retry } from "@opencode-ai/core/util/retry"
 import type { OpenCodeEvent, SessionApi } from "@opencode-ai/client/promise"
 import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
+import { getPresentPageRegistry } from "@opencode-ai/session-ui/context"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
 
@@ -231,6 +232,57 @@ describe("server session", () => {
     expect(ctx.get).toEqual([{ sessionID: "root" }])
     expect(ctx.messages).toEqual([{ sessionID: "root", limit: 20, before: undefined }])
     expect(ctx.store.data.message.root).toEqual([])
+  })
+
+  test("prefetch expands a cached default page for the Present Page registry", async () => {
+    const turns = Array.from({ length: 11 }, (_, index) => {
+      const number = index + 1
+      const user = userMessage(`message-${number}-user`, {
+        sessionID: "root",
+        time: { created: number * 2 - 1 },
+      })
+      const assistant = assistantMessage(`message-${number}-assistant`, user.id, {
+        sessionID: "root",
+        time: { created: number * 2, completed: number * 2 },
+      })
+      return [
+        { info: user, parts: [] },
+        {
+          info: assistant,
+          parts: [
+            textPart(assistant.id, {
+              id: `part-${number}`,
+              sessionID: "root",
+              text:
+                number === 1
+                  ? "[Older page](https://pages.test/p/page_older_12345678/revisions/1)"
+                  : "text",
+            }),
+          ],
+        },
+      ]
+    }).flat()
+    const client = messageClient(response(turns.slice(-20), "older"), response(turns))
+    const store = createServerSession(client)
+    store.remember(session("root"))
+    const registry = () =>
+      getPresentPageRegistry({
+        sessionID: "root",
+        sessions: [session("root")],
+        messages: store.data.message,
+        parts: store.data.part,
+      })
+
+    await store.sync("root")
+    expect(registry().pages).toEqual([])
+
+    await store.prefetch("root", 500)
+
+    expect(client.requests).toEqual([
+      { sessionID: "root", limit: 20, before: undefined },
+      { sessionID: "root", limit: 500, before: undefined },
+    ])
+    expect(registry().pages.map((page) => page.id)).toEqual(["page_older_12345678"])
   })
 
   test("loads current session content through the current message API", async () => {

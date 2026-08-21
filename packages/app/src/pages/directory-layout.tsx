@@ -1,17 +1,23 @@
-import { DataProvider } from "@opencode-ai/session-ui/context"
+import { DataProvider, type OpenPresentPageFn } from "@opencode-ai/session-ui/context"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
-import { SDKProvider } from "@/context/sdk"
+import { SDKProvider, useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
 import type { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { useServerSync } from "@/context/server-sync"
+import { useLayout } from "@/context/layout"
+import { useServerSDK } from "@/context/server-sdk"
+import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
+import { SESSION_PRESENT_PAGE_TAB } from "@/context/layout-tabs"
+
+const PRESENT_PAGE_HISTORY_LIMIT = 500
 
 export function DirectoryDataProvider(
   props: ParentProps<{
@@ -25,12 +31,26 @@ export function DirectoryDataProvider(
   const params = useParams()
   const sync = useSync()
   const serverSync = useServerSync()
+  const layout = useLayout()
+  const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
+  const sessionKey = createMemo(() =>
+    SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), params.id)),
+  )
+  const tabs = layout.tabs(sessionKey)
+  const view = layout.view(sessionKey)
   const href = (sessionID: string) => {
     const server = props.server?.()
     if (server) return sessionHref(server, sessionID)
     return `/${slug()}/session/${sessionID}`
+  }
+  const openPresentPage: OpenPresentPageFn = (request) => {
+    if (!params.id) return
+    view.presentPage.select(request.pageID, request.href)
+    void tabs.open(SESSION_PRESENT_PAGE_TAB)
+    view.reviewPanel.open()
   }
 
   createEffect(() => {
@@ -47,6 +67,8 @@ export function DirectoryDataProvider(
     (id) =>
       sync()
         .session.sync(id)
+        // An earlier provider may already have cached the default page, so sync alone cannot widen the history window.
+        .then(() => serverSync().session.prefetch(id, PRESENT_PAGE_HISTORY_LIMIT))
         .catch(() => {}),
   )
 
@@ -66,6 +88,7 @@ export function DirectoryDataProvider(
           sessionID={params.id}
           onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
           onSessionHref={href}
+          onOpenPresentPage={openPresentPage}
         >
           <LocalProvider>{props.children}</LocalProvider>
         </DataProvider>
