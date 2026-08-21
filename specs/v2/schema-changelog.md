@@ -1,5 +1,10 @@
 # V2 Schema Changelog
 
+## 2026-08-20: Add Server-Wide Agent Run Overview
+
+- Add `GET /api/agent-run`, returning every active run and the 100 most recent terminal runs across all Session trees on the connected server, plus reconciliation records and Session nodes needed to render them correctly. The existing Session-scoped endpoint remains available.
+- Make the web Agents workspace tab permanent and back its active count and panel with the server-wide overview.
+
 ## 2026-08-10: Add Durable Agent Run Observability
 
 - Add the public `AgentRun` resource with durable `arun_` identities, explicit `running`, `retrying`, `succeeded`, `failed`, `cancelled`, `interrupted`, and `unknown` states, semantic activity, freshness timestamps, and resume links. AgentRun identities describe executions and remain distinct from child Session identities.

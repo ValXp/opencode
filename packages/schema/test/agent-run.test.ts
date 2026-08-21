@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Schema } from "effect"
+import { DateTime, Schema, SchemaAST } from "effect"
 import { Agent, AgentRun, Session, SessionMessage } from "../src"
 import { EventManifest } from "../src/event-manifest"
 
@@ -99,6 +99,20 @@ describe("AgentRun", () => {
     expect(DateTime.toEpochMillis(snapshot.nodes[0].createdAt)).toBe(10)
     expect(snapshot.nodes[0].agent).toBeUndefined()
     expect(Schema.encodeSync(AgentRun.Snapshot)(snapshot)).toEqual(input)
+  })
+
+  test("decodes and encodes an Overview without a single root session", () => {
+    const input = {
+      nodes: [],
+      active: [],
+      history: [],
+    }
+
+    const overview = Schema.decodeUnknownSync(AgentRun.Overview)(input)
+
+    expect(SchemaAST.resolveIdentifier(AgentRun.Overview.ast)).toBe("AgentRun.Overview")
+    expect(Schema.encodeSync(AgentRun.Overview)(overview)).toEqual(input)
+    expect("rootSessionID" in overview).toBe(false)
   })
 
   test("registers agent.run.updated as a live public event carrying Info", () => {

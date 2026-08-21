@@ -5,12 +5,20 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer"
 import { useLanguage } from "@/context/language"
-import { useSDK } from "@/context/sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { AgentsPanel } from "./panel"
 import { useAgents } from "./context"
+
+export async function resolveLegacyAgentSessionHref(input: {
+  sessionID: string
+  getSession: (sessionID: string) => { directory: string } | undefined
+  resolveSession: (sessionID: string) => Promise<{ directory: string }>
+}) {
+  const session = input.getSession(input.sessionID) ?? (await input.resolveSession(input.sessionID))
+  return legacySessionHref(session.directory, input.sessionID)
+}
 
 export function SessionAgentsDrawer() {
   const agents = useAgents()
@@ -59,15 +67,14 @@ export function SessionAgentsPanel(props: { class?: string }) {
   const language = useLanguage()
   const navigate = useNavigate()
   const params = useParams<{ serverKey?: string }>()
-  const sdk = useSDK()
   const serverSync = useServerSync()
   const sync = useSync()
 
   createEffect(() => {
-    const snapshot = agents.snapshot()
-    if (!snapshot) return
-    snapshot.nodes.forEach((node) => {
-      if (sync().session.get(node.sessionID)) return
+    const overview = agents.overview()
+    if (!overview) return
+    overview.nodes.forEach((node) => {
+      if (serverSync().session.get(node.sessionID)) return
       void serverSync()
         .session.resolve(node.sessionID)
         .catch(() => {})
@@ -76,7 +83,7 @@ export function SessionAgentsPanel(props: { class?: string }) {
 
   return (
     <Show
-      when={!agents.loading() || agents.snapshot()}
+      when={!agents.loading() || agents.overview()}
       fallback={
         <div
           data-slot="session-agents-loading"
@@ -124,11 +131,17 @@ export function SessionAgentsPanel(props: { class?: string }) {
           onHistoryVisibleChange={agents.setShowHistory}
           onOpenSession={(sessionID) => {
             agents.setMobileDrawerOpen(false)
-            navigate(
-              params.serverKey
-                ? sessionHref(requireServerKey(params.serverKey), sessionID)
-                : legacySessionHref(sdk().directory, sessionID),
-            )
+            if (params.serverKey) {
+              navigate(sessionHref(requireServerKey(params.serverKey), sessionID))
+              return
+            }
+            void resolveLegacyAgentSessionHref({
+              sessionID,
+              getSession: (id) => serverSync().session.get(id),
+              resolveSession: (id) => serverSync().session.resolve(id),
+            })
+              .then((href) => navigate(href))
+              .catch(() => {})
           }}
         />
       </div>

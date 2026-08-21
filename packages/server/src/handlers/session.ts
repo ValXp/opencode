@@ -90,6 +90,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.agentRunOverview",
+        Effect.fn(function* () {
+          return yield* agentRun.overview()
+        }),
+      )
+      .handle(
         "session.get",
         Effect.fn(function* (ctx) {
           return {

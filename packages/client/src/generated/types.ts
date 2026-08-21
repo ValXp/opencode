@@ -329,6 +329,70 @@ export type SessionsCreateOutput = {
 
 export type SessionsActiveOutput = { readonly data: { readonly [x: string]: { readonly type: "running" } } }["data"]
 
+export type SessionsAgentRunOverviewOutput = {
+  readonly nodes: ReadonlyArray<{
+    readonly sessionID: string
+    readonly parentSessionID: string
+    readonly title: string
+    readonly agent?: string
+    readonly createdAt: number
+  }>
+  readonly active: ReadonlyArray<{
+    readonly id: string
+    readonly sessionID: string
+    readonly callerSessionID: string
+    readonly previousRunID?: string
+    readonly source: { readonly messageID: string; readonly callID: string }
+    readonly agent: string
+    readonly description: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly background: boolean
+    readonly state:
+      | { readonly type: "running" }
+      | { readonly type: "retrying"; readonly attempt: number; readonly message: string; readonly next: number }
+      | { readonly type: "succeeded" }
+      | { readonly type: "failed"; readonly error: string }
+      | { readonly type: "cancelled" }
+      | { readonly type: "interrupted"; readonly reason?: string }
+      | { readonly type: "unknown"; readonly reason: "owner_lost" | "legacy_ambiguous" | "orphaned" }
+    readonly activity: { readonly at: number; readonly summary?: string }
+    readonly time: {
+      readonly created: number
+      readonly started?: number
+      readonly updated: number
+      readonly finished?: number
+    }
+    readonly version: number
+  }>
+  readonly history: ReadonlyArray<{
+    readonly id: string
+    readonly sessionID: string
+    readonly callerSessionID: string
+    readonly previousRunID?: string
+    readonly source: { readonly messageID: string; readonly callID: string }
+    readonly agent: string
+    readonly description: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly background: boolean
+    readonly state:
+      | { readonly type: "running" }
+      | { readonly type: "retrying"; readonly attempt: number; readonly message: string; readonly next: number }
+      | { readonly type: "succeeded" }
+      | { readonly type: "failed"; readonly error: string }
+      | { readonly type: "cancelled" }
+      | { readonly type: "interrupted"; readonly reason?: string }
+      | { readonly type: "unknown"; readonly reason: "owner_lost" | "legacy_ambiguous" | "orphaned" }
+    readonly activity: { readonly at: number; readonly summary?: string }
+    readonly time: {
+      readonly created: number
+      readonly started?: number
+      readonly updated: number
+      readonly finished?: number
+    }
+    readonly version: number
+  }>
+}
+
 export type SessionsGetInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsGetOutput = {

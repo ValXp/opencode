@@ -31,9 +31,8 @@ function run(input: {
   })
 }
 
-function snapshot(info = run({ state: { type: "running" } })) {
-  return AgentRun.Snapshot.make({
-    rootSessionID: rootID,
+function overview(info = run({ state: { type: "running" } })) {
+  return AgentRun.Overview.make({
     nodes: [
       AgentRun.Node.make({
         sessionID: Session.ID.make("ses_child"),
@@ -47,16 +46,7 @@ function snapshot(info = run({ state: { type: "running" } })) {
   })
 }
 
-function emptySnapshot(rootSessionID: string) {
-  return AgentRun.Snapshot.make({
-    rootSessionID: Session.ID.make(rootSessionID),
-    nodes: [],
-    active: [],
-    history: [],
-  })
-}
-
-function activeSnapshot(rootSessionID: string, childSessionID: string) {
+function activeOverview(rootSessionID: string, childSessionID: string) {
   const root = Session.ID.make(rootSessionID)
   const info = run({
     id: `arun_${childSessionID}`,
@@ -64,8 +54,7 @@ function activeSnapshot(rootSessionID: string, childSessionID: string) {
     rootSessionID,
     state: { type: "running" },
   })
-  return AgentRun.Snapshot.make({
-    rootSessionID: root,
+  return AgentRun.Overview.make({
     nodes: [
       AgentRun.Node.make({
         sessionID: info.sessionID,
@@ -79,20 +68,19 @@ function activeSnapshot(rootSessionID: string, childSessionID: string) {
   })
 }
 
-function snapshotWithBranch(info: AgentRun.Info) {
-  return snapshotWithBranches(info)
+function overviewWithBranch(info: AgentRun.Info) {
+  return overviewWithBranches(info)
 }
 
-function snapshotWithBranches(...infos: AgentRun.Info[]) {
-  const current = snapshot()
-  return AgentRun.Snapshot.make({
-    rootSessionID: rootID,
+function overviewWithBranches(...infos: AgentRun.Info[]) {
+  const current = overview()
+  return AgentRun.Overview.make({
     nodes: [
       ...current.nodes,
       ...infos.map((info) =>
         AgentRun.Node.make({
           sessionID: info.sessionID,
-          parentSessionID: rootID,
+          parentSessionID: info.callerSessionID,
           title: "New branch",
           createdAt: DateTime.makeUnsafe(2_000),
         }),
@@ -149,20 +137,17 @@ async function settle() {
   await Promise.resolve()
 }
 
-test("loads one snapshot for the derived root and exposes query state", async () => {
-  const calls: string[] = []
+test("loads one server-wide overview and exposes query state", async () => {
+  let calls = 0
   const eventLayer = events()
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_child",
-      getSession: (sessionID) =>
-        sessionID === "ses_child" ? { id: "ses_child", parentID: "ses_root" } : { id: "ses_root" },
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async (sessionID) => {
-        calls.push(sessionID)
-        return snapshot()
+      fetchOverview: async () => {
+        calls++
+        return overview()
       },
       events: eventLayer,
       now: () => 3_000,
@@ -172,27 +157,31 @@ test("loads one snapshot for the derived root and exposes query state", async ()
   expect(owner.agents.loading()).toBeTrue()
   await settle()
 
-  expect(calls).toEqual(["ses_root"])
+  expect(calls).toBe(1)
   expect(owner.agents.loading()).toBeFalse()
   expect(owner.agents.error()).toBeUndefined()
   expect(owner.agents.lastSuccessAt()).toBe(3_000)
-  expect(String(owner.agents.snapshot()?.rootSessionID)).toBe("ses_root")
+  expect(owner.agents.overview()?.nodes).toHaveLength(1)
   expect(owner.agents.projection().rows.map((row) => String(row.node.sessionID))).toEqual(["ses_child"])
 
   owner.dispose()
 })
 
-test("applies run events received while the initial snapshot is loading", async () => {
+test("applies another tree's run event received while the initial overview is loading", async () => {
   const eventLayer = events()
-  const response = Promise.withResolvers<AgentRun.Snapshot>()
+  const response = Promise.withResolvers<AgentRun.Overview>()
+  const stale = run({
+    id: "arun_startup_other",
+    sessionID: "ses_startup_other",
+    rootSessionID: "ses_other_root",
+    state: { type: "running" },
+  })
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: () => response.promise,
+      fetchOverview: () => response.promise,
       events: eventLayer,
       now: () => 3_000,
     }),
@@ -201,56 +190,39 @@ test("applies run events received while the initial snapshot is loading", async 
   eventLayer.emit({
     type: "agent.run.updated",
     properties: {
-      info: Schema.encodeSync(AgentRun.Info)(run({ state: { type: "succeeded" }, version: 2 })),
+      info: Schema.encodeSync(AgentRun.Info)(
+        run({
+          id: "arun_startup_other",
+          sessionID: "ses_startup_other",
+          rootSessionID: "ses_other_root",
+          state: { type: "succeeded" },
+          version: 2,
+        }),
+      ),
     },
   })
-  response.resolve(snapshot())
+  response.resolve(overviewWithBranch(stale))
   await settle()
 
-  expect(owner.agents.projection().rows[0]?.state.type).toBe("succeeded")
+  expect(owner.agents.projection().rows.map((row) => [String(row.node.sessionID), row.state.type])).toEqual([
+    ["ses_child", "running"],
+    ["ses_startup_other", "succeeded"],
+  ])
   owner.dispose()
 })
 
-test("loads the highest known parent when the viewed child's ancestor is missing", async () => {
-  const calls: string[] = []
-  const owner = createRoot((dispose) => ({
-    dispose,
-    agents: createAgentsContext({
-      sessionID: () => "ses_child",
-      getSession: (sessionID) =>
-        sessionID === "ses_child" ? { id: "ses_child", parentID: "ses_missing_root" } : undefined,
-      queryKey: () => "server\0workspace",
-      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async (sessionID) => {
-        calls.push(sessionID)
-        return emptySnapshot(sessionID)
-      },
-      events: events(),
-    }),
-  }))
-
-  await settle()
-
-  expect(calls).toEqual(["ses_missing_root"])
-  expect(owner.agents.rootSessionID()).toBe("ses_missing_root")
-  expect(owner.agents.loading()).toBeFalse()
-  owner.dispose()
-})
-
-test("owns one freshness timer only while the snapshot has active runs", async () => {
-  const calls: string[] = []
+test("owns one freshness timer only while the overview has active runs", async () => {
+  let calls = 0
   const eventLayer = events()
   const time = clock(3_000)
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async (sessionID) => {
-        calls.push(sessionID)
-        return snapshot()
+      fetchOverview: async () => {
+        calls++
+        return overview()
       },
       events: eventLayer,
       now: time.now,
@@ -267,7 +239,7 @@ test("owns one freshness timer only while the snapshot has active runs", async (
   time.tick(5_000)
 
   expect(owner.agents.projection().rows[0]?.freshness?.ageMs).toBe(6_000)
-  expect(calls).toEqual(["ses_root"])
+  expect(calls).toBe(1)
 
   eventLayer.emit({
     type: "agent.run.updated",
@@ -284,11 +256,9 @@ test("owns history, row expansion, and mobile drawer state", () => {
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => snapshot(),
+      fetchOverview: async () => overview(),
       events: events(),
     }),
   }))
@@ -315,29 +285,21 @@ test("owns history, row expansion, and mobile drawer state", () => {
   owner.dispose()
 })
 
-test("keeps state within one root and resets root-scoped state when the viewed root changes", async () => {
+test("keeps the global overview and panel state across session route changes", async () => {
   const [sessionID, setSessionID] = createSignal("ses_child_a")
-  const sessions: Record<string, { id: string; parentID?: string }> = {
-    ses_child_a: { id: "ses_child_a", parentID: "ses_root_a" },
-    ses_sibling_a: { id: "ses_sibling_a", parentID: "ses_root_a" },
-    ses_root_a: { id: "ses_root_a" },
-    ses_child_b: { id: "ses_child_b", parentID: "ses_root_b" },
-    ses_root_b: { id: "ses_root_b" },
-  }
-  const nextRoot = Promise.withResolvers<AgentRun.Snapshot>()
-  const calls: string[] = []
+  let requests = 0
   const time = clock(3_000)
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID,
-      getSession: (id) => sessions[id],
-      queryKey: () => "server\0workspace",
+      queryKey: () => {
+        sessionID()
+        return "server"
+      },
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async (root) => {
-        calls.push(root)
-        if (root === "ses_root_b") return nextRoot.promise
-        return activeSnapshot(root, "ses_child_a")
+      fetchOverview: async () => {
+        requests++
+        return activeOverview("ses_root_a", "ses_child_a")
       },
       events: events(),
       now: time.now,
@@ -352,49 +314,86 @@ test("keeps state within one root and resets root-scoped state when the viewed r
   owner.agents.setExpanded("ses_child_a", true)
   owner.agents.setMobileDrawerOpen(true)
 
-  setSessionID("ses_sibling_a")
-  await settle()
-  expect(calls).toEqual(["ses_root_a"])
-  expect(owner.agents.showHistory()).toBeTrue()
-
   setSessionID("ses_child_b")
   await settle()
-  expect(calls).toEqual(["ses_root_a", "ses_root_b"])
-  expect(owner.agents.snapshot()).toBeUndefined()
-  expect(owner.agents.lastSuccessAt()).toBeUndefined()
-  expect(owner.agents.showHistory()).toBeFalse()
-  expect(owner.agents.expanded("ses_child_a")).toBeFalse()
-  expect(owner.agents.mobileDrawerOpen()).toBeFalse()
-  expect(owner.agents.loading()).toBeTrue()
-  expect(time.active()).toBe(0)
-
-  nextRoot.resolve(emptySnapshot("ses_root_b"))
-  await owner.agents.refresh()
-  await settle()
-  expect(String(owner.agents.snapshot()?.rootSessionID)).toBe("ses_root_b")
-  expect(time.active()).toBe(0)
-
-  setSessionID("ses_child_a")
-  await settle()
-  expect(calls).toEqual(["ses_root_a", "ses_root_b", "ses_root_a"])
+  expect(requests).toBe(1)
+  expect(owner.agents.overview()?.nodes.map((node) => String(node.sessionID))).toEqual(["ses_child_a"])
+  expect(owner.agents.showHistory()).toBeTrue()
+  expect(owner.agents.expanded("ses_child_a")).toBeTrue()
+  expect(owner.agents.mobileDrawerOpen()).toBeTrue()
   expect(time.active()).toBe(1)
   owner.dispose()
   expect(time.active()).toBe(0)
 })
 
-test("preserves the last snapshot and reports stale data when refresh fails", async () => {
+test("isolates overview data and event journals when the connected server changes", async () => {
+  const [serverKey, setServerKey] = createSignal("server-a")
+  const eventLayer = events()
+  const staleServerA = Promise.withResolvers<AgentRun.Overview>()
+  const serverB = Promise.withResolvers<AgentRun.Overview>()
+  const calls: string[] = []
+  let serverARequests = 0
+  const owner = createRoot((dispose) => ({
+    dispose,
+    agents: createAgentsContext({
+      queryKey: serverKey,
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      fetchOverview: async () => {
+        const key = serverKey()
+        calls.push(key)
+        if (key === "server-b") return serverB.promise
+        serverARequests++
+        if (serverARequests === 1) return overview()
+        return staleServerA.promise
+      },
+      events: eventLayer,
+      now: () => 3_000,
+    }),
+  }))
+
+  await settle()
+  const staleRefresh = owner.agents.refresh()
+  await settle()
+  eventLayer.emit({
+    type: "agent.run.updated",
+    properties: {
+      info: Schema.encodeSync(AgentRun.Info)(run({ state: { type: "failed", error: "server a" }, version: 3 })),
+    },
+  })
+  expect(owner.agents.projection().rows[0]?.current?.version).toBe(3)
+
+  owner.agents.setShowHistory(true)
+  setServerKey("server-b")
+  await settle()
+  expect(owner.agents.overview()).toBeUndefined()
+  expect(owner.agents.showHistory()).toBeFalse()
+
+  serverB.resolve(overview())
+  await settle()
+  await settle()
+  expect(calls).toEqual(["server-a", "server-a", "server-b"])
+  expect(owner.agents.projection().rows[0]?.current?.version).toBe(1)
+  expect(owner.agents.projection().rows[0]?.state.type).toBe("running")
+
+  staleServerA.resolve(overview(run({ state: { type: "succeeded" }, version: 2 })))
+  await staleRefresh
+  await settle()
+  expect(owner.agents.projection().rows[0]?.current?.version).toBe(1)
+  expect(owner.agents.projection().rows[0]?.state.type).toBe("running")
+  owner.dispose()
+})
+
+test("preserves the last overview and reports stale data when refresh fails", async () => {
   let requests = 0
   let currentTime = 3_000
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         throw new Error("offline")
       },
       events: events(),
@@ -410,7 +409,7 @@ test("preserves the last snapshot and reports stale data when refresh fails", as
   await settle()
 
   expect(requests).toBe(2)
-  expect(String(owner.agents.snapshot()?.rootSessionID)).toBe("ses_root")
+  expect(owner.agents.overview()?.nodes).toHaveLength(1)
   const error = owner.agents.error()
   expect(error).toBeInstanceOf(Error)
   if (!(error instanceof Error)) throw new Error("Expected refresh error")
@@ -424,18 +423,16 @@ test("preserves the last snapshot and reports stale data when refresh fails", as
 
 test("replays run events received during an ordinary refresh", async () => {
   const eventLayer = events()
-  const refreshed = Promise.withResolvers<AgentRun.Snapshot>()
+  const refreshed = Promise.withResolvers<AgentRun.Overview>()
   let requests = 0
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         return refreshed.promise
       },
       events: eventLayer,
@@ -452,7 +449,7 @@ test("replays run events received during an ordinary refresh", async () => {
       info: Schema.encodeSync(AgentRun.Info)(run({ state: { type: "succeeded" }, version: 2 })),
     },
   })
-  refreshed.resolve(snapshot())
+  refreshed.resolve(overview())
   await refresh
   await settle()
 
@@ -468,13 +465,11 @@ test("decodes versioned run events and updates a known node without refetching",
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        return snapshot()
+        return overview()
       },
       events: eventLayer,
       now: () => 3_000,
@@ -511,13 +506,11 @@ test("applies live run events encoded with stream timestamps", async () => {
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        return snapshot()
+        return overview()
       },
       events: eventLayer,
       now: () => 4_000,
@@ -548,9 +541,9 @@ test("applies live run events encoded with stream timestamps", async () => {
   owner.dispose()
 })
 
-test("coalesces unknown-node events into one partial-snapshot repair", async () => {
+test("coalesces unknown-node events into one partial-overview repair", async () => {
   const eventLayer = events()
-  const repair = Promise.withResolvers<AgentRun.Snapshot>()
+  const repair = Promise.withResolvers<AgentRun.Overview>()
   const unknown = run({
     id: "arun_new",
     sessionID: "ses_new",
@@ -561,13 +554,11 @@ test("coalesces unknown-node events into one partial-snapshot repair", async () 
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         return repair.promise
       },
       events: eventLayer,
@@ -589,7 +580,7 @@ test("coalesces unknown-node events into one partial-snapshot repair", async () 
   expect(owner.agents.warning()).toEqual({ stale: false, partial: true })
   expect(owner.agents.projection().rows.map((row) => String(row.node.sessionID))).toEqual(["ses_child"])
 
-  repair.resolve(snapshotWithBranch(unknown))
+  repair.resolve(overviewWithBranch(unknown))
   await owner.agents.refresh()
   await settle()
 
@@ -602,8 +593,8 @@ test("coalesces unknown-node events into one partial-snapshot repair", async () 
 
 test("repairs each unknown run version at most once when its node stays absent", async () => {
   const eventLayer = events()
-  const firstRepair = Promise.withResolvers<AgentRun.Snapshot>()
-  const newerRepair = Promise.withResolvers<AgentRun.Snapshot>()
+  const firstRepair = Promise.withResolvers<AgentRun.Overview>()
+  const newerRepair = Promise.withResolvers<AgentRun.Overview>()
   const unknown = run({
     id: "arun_deleted_child",
     sessionID: "ses_deleted_child",
@@ -614,13 +605,11 @@ test("repairs each unknown run version at most once when its node stays absent",
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         if (requests === 2) return firstRepair.promise
         return newerRepair.promise
       },
@@ -638,7 +627,7 @@ test("repairs each unknown run version at most once when its node stays absent",
   await settle()
   expect(requests).toBe(2)
 
-  firstRepair.resolve(snapshot())
+  firstRepair.resolve(overview())
   await settle()
 
   expect(requests).toBe(2)
@@ -657,7 +646,7 @@ test("repairs each unknown run version at most once when its node stays absent",
   await settle()
   expect(requests).toBe(3)
 
-  newerRepair.resolve(snapshotWithBranch(newer))
+  newerRepair.resolve(overviewWithBranch(newer))
   await owner.agents.refresh()
   await settle()
   expect(owner.agents.partial()).toBeFalse()
@@ -665,29 +654,27 @@ test("repairs each unknown run version at most once when its node stays absent",
   owner.dispose()
 })
 
-test("repairs an unknown run received after the previous repair snapshot was captured", async () => {
+test("repairs an unknown run received after the previous repair overview was captured", async () => {
   const eventLayer = events()
   const captured = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
   const followupStarted = Promise.withResolvers<void>()
-  const followup = Promise.withResolvers<AgentRun.Snapshot>()
+  const followup = Promise.withResolvers<AgentRun.Overview>()
   const first = run({ id: "arun_capture_a", sessionID: "ses_capture_a", state: { type: "running" }, version: 1 })
   const second = run({ id: "arun_capture_b", sessionID: "ses_capture_b", state: { type: "running" }, version: 1 })
   let requests = 0
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         if (requests === 2) {
           captured.resolve()
           await release.promise
-          return snapshotWithBranch(first)
+          return overviewWithBranch(first)
         }
         followupStarted.resolve()
         return followup.promise
@@ -710,7 +697,7 @@ test("repairs an unknown run received after the previous repair snapshot was cap
 
   expect(requests).toBe(3)
   expect(owner.agents.partial()).toBeTrue()
-  followup.resolve(snapshotWithBranches(first, second))
+  followup.resolve(overviewWithBranches(first, second))
   await owner.agents.refresh()
   await settle()
 
@@ -726,7 +713,7 @@ test("repairs an unknown run received after the previous repair snapshot was cap
 
 test("repairs journal overflow once and preserves the first evicted run", async () => {
   const eventLayer = events()
-  const stale = Promise.withResolvers<AgentRun.Snapshot>()
+  const stale = Promise.withResolvers<AgentRun.Overview>()
   const infos = Array.from({ length: 257 }, (_, index) =>
     run({
       id: `arun_overflow_${index}`,
@@ -739,17 +726,15 @@ test("repairs journal overflow once and preserves the first evicted run", async 
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         if (requests === 2) return stale.promise
         if (requests === 3) throw new Error("repair unavailable")
-        const current = snapshot()
-        return AgentRun.Snapshot.make({ ...current, active: [...current.active, ...infos] })
+        const current = overview()
+        return AgentRun.Overview.make({ ...current, active: [...current.active, ...infos] })
       },
       events: eventLayer,
       now: () => 3_000,
@@ -765,7 +750,7 @@ test("repairs journal overflow once and preserves the first evicted run", async 
       properties: { info: Schema.encodeSync(AgentRun.Info)(info) },
     }),
   )
-  stale.resolve(snapshot())
+  stale.resolve(overview())
   await refresh
   await settle()
 
@@ -779,13 +764,13 @@ test("repairs journal overflow once and preserves the first evicted run", async 
 
   expect(requests).toBe(4)
   expect(owner.agents.partial()).toBeFalse()
-  expect(owner.agents.snapshot()?.active.some((info) => info.id === infos[0]?.id)).toBeTrue()
+  expect(owner.agents.overview()?.active.some((info) => info.id === infos[0]?.id)).toBeTrue()
   owner.dispose()
 })
 
-test("replays newer run events after an unknown-node repair snapshot", async () => {
+test("replays newer run events after an unknown-node repair overview", async () => {
   const eventLayer = events()
-  const repair = Promise.withResolvers<AgentRun.Snapshot>()
+  const repair = Promise.withResolvers<AgentRun.Overview>()
   const unknown = run({
     id: "arun_repair_new",
     sessionID: "ses_repair_new",
@@ -796,13 +781,11 @@ test("replays newer run events after an unknown-node repair snapshot", async () 
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
+        if (requests === 1) return overview()
         return repair.promise
       },
       events: eventLayer,
@@ -829,7 +812,7 @@ test("replays newer run events after an unknown-node repair snapshot", async () 
     type: "agent.run.updated",
     properties: { info: Schema.encodeSync(AgentRun.Info)(run({ state: { type: "succeeded" }, version: 2 })) },
   })
-  repair.resolve(snapshotWithBranch(unknown))
+  repair.resolve(overviewWithBranch(unknown))
   await owner.agents.refresh()
   await settle()
 
@@ -838,19 +821,23 @@ test("replays newer run events after an unknown-node repair snapshot", async () 
   owner.dispose()
 })
 
-test("ignores agent-run events from an unrelated session tree", async () => {
+test("repairs and applies run events from another session tree", async () => {
   const eventLayer = events()
+  const unrelated = run({
+    id: "arun_unrelated",
+    sessionID: "ses_unrelated_child",
+    rootSessionID: "ses_unrelated_root",
+    state: { type: "running" },
+  })
   let requests = 0
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        return snapshot()
+        return requests === 1 ? overview() : overviewWithBranch(unrelated)
       },
       events: eventLayer,
       now: () => 3_000,
@@ -861,78 +848,80 @@ test("ignores agent-run events from an unrelated session tree", async () => {
   eventLayer.emit({
     type: "agent.run.updated",
     properties: {
-      info: Schema.encodeSync(AgentRun.Info)(
-        run({
-          id: "arun_unrelated",
-          sessionID: "ses_unrelated_child",
-          rootSessionID: "ses_unrelated_root",
-          state: { type: "running" },
-        }),
-      ),
+      info: Schema.encodeSync(AgentRun.Info)(unrelated),
     },
   })
   await settle()
 
-  expect(requests).toBe(1)
+  expect(requests).toBe(2)
   expect(owner.agents.partial()).toBeFalse()
   expect(owner.agents.warning()).toBeUndefined()
-  expect(owner.agents.projection().rows.map((row) => String(row.node.sessionID))).toEqual(["ses_child"])
+  expect(owner.agents.projection().rows.map((row) => [String(row.node.sessionID), row.depth])).toEqual([
+    ["ses_child", 0],
+    ["ses_unrelated_child", 0],
+  ])
+  expect(owner.agents.projection().activeCount).toBe(2)
   owner.dispose()
 })
 
-test("refetches from the global stream once for each new connection", async () => {
-  const directoryEvents = events()
-  const globalEvents = events()
+test("refetches from the server-wide stream once for each new connection", async () => {
+  const serverEvents = events()
+  const reconnect = Promise.withResolvers<AgentRun.Overview>()
+  const newer = run({ state: { type: "failed", error: "newer event" }, version: 3 })
   let requests = 0
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        if (requests === 1) return snapshot()
-        return snapshot(run({ state: { type: "succeeded" }, version: 2 }))
+        if (requests === 1) return overview()
+        if (requests === 2) return reconnect.promise
+        return overview(newer)
       },
-      events: [directoryEvents, globalEvents],
+      events: serverEvents,
       initialConnectionID: "evt_initial",
       now: () => 3_000,
     }),
   }))
 
   await settle()
-  globalEvents.emit({ id: "evt_reconnect_1", type: "server.connected", properties: {} })
+  serverEvents.emit({ id: "evt_reconnect_1", type: "server.connected", properties: {} })
+  await settle()
+  serverEvents.emit({
+    type: "agent.run.updated",
+    properties: { info: Schema.encodeSync(AgentRun.Info)(newer) },
+  })
+  reconnect.resolve(overview(run({ state: { type: "succeeded" }, version: 2 })))
   await settle()
 
   expect(requests).toBe(2)
-  expect(owner.agents.projection().rows[0]?.state?.type).toBe("succeeded")
+  expect(owner.agents.projection().rows[0]?.current?.version).toBe(3)
+  expect(owner.agents.projection().rows[0]?.state?.type).toBe("failed")
 
-  globalEvents.emit({ id: "evt_reconnect_1", type: "server.connected", properties: {} })
+  serverEvents.emit({ id: "evt_reconnect_1", type: "server.connected", properties: {} })
   await settle()
   expect(requests).toBe(2)
 
-  globalEvents.emit({ id: "evt_reconnect_2", type: "server.connected", properties: {} })
+  serverEvents.emit({ id: "evt_reconnect_2", type: "server.connected", properties: {} })
   await settle()
   expect(requests).toBe(3)
   owner.dispose()
 })
 
-test("refetches a cached snapshot when the context remounts", async () => {
+test("refetches a cached overview when the context remounts", async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   let requests = 0
   const mount = () =>
     createRoot((dispose) => ({
       dispose,
       agents: createAgentsContext({
-        sessionID: () => "ses_root",
-        getSession: () => ({ id: "ses_root" }),
-        queryKey: () => "server\0workspace",
+        queryKey: () => "server",
         queryClient,
-        fetchSnapshot: async () => {
+        fetchOverview: async () => {
           requests++
-          return requests === 1 ? snapshot() : snapshot(run({ state: { type: "succeeded" }, version: 2 }))
+          return requests === 1 ? overview() : overview(run({ state: { type: "succeeded" }, version: 2 }))
         },
         events: events(),
         now: () => 3_000,
@@ -958,13 +947,11 @@ test("disposal removes the event listener and freshness timer", async () => {
   const owner = createRoot((dispose) => ({
     dispose,
     agents: createAgentsContext({
-      sessionID: () => "ses_root",
-      getSession: () => ({ id: "ses_root" }),
-      queryKey: () => "server\0workspace",
+      queryKey: () => "server",
       queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-      fetchSnapshot: async () => {
+      fetchOverview: async () => {
         requests++
-        return snapshot()
+        return overview()
       },
       events: eventLayer,
       now: time.now,

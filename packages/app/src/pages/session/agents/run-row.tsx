@@ -149,7 +149,9 @@ export function AgentRunRow(props: AgentRunRowProps) {
                 </Match>
               </Switch>
             </span>
-            <span class="min-w-0 flex-1 truncate text-text-strong">{props.row.node.title}</span>
+            <span data-slot="agent-title" dir="auto" class="min-w-0 flex-1 truncate text-text-strong">
+              {props.row.node.title}
+            </span>
             <span class="shrink-0 text-11-regular text-text-weak">{statusLabel()}</span>
             <Icon
               name="chevron-down"
@@ -164,12 +166,14 @@ export function AgentRunRow(props: AgentRunRowProps) {
               class="mt-1 truncate ps-6 text-11-regular"
               classList={{ "text-text-weak": !inactive(), "text-icon-warning-base": inactive() }}
             >
-              {inactive()
-                ? language.t("session.agents.activity.inactive", {
-                    seconds: ageSeconds(),
-                    summary: props.row.current?.activity.summary ?? statusLabel(),
-                  })
-                : props.row.current?.activity.summary}
+              <span data-slot="agent-activity-text" dir="auto">
+                {inactive()
+                  ? language.t("session.agents.activity.inactive", {
+                      seconds: ageSeconds(),
+                      summary: props.row.current?.activity.summary ?? statusLabel(),
+                    })
+                  : props.row.current?.activity.summary}
+              </span>
             </div>
           </Show>
         </button>

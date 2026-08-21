@@ -48,9 +48,8 @@ function run(input: {
   })
 }
 
-function snapshot(input: { nodes: AgentRun.Node[]; active?: AgentRun.Info[]; history?: AgentRun.Info[] }) {
-  return AgentRun.Snapshot.make({
-    rootSessionID: rootID,
+function overview(input: { nodes: AgentRun.Node[]; active?: AgentRun.Info[]; history?: AgentRun.Info[] }) {
+  return AgentRun.Overview.make({
     nodes: input.nodes,
     active: input.active ?? [],
     history: input.history ?? [],
@@ -63,7 +62,7 @@ describe("agents projection", () => {
     const nested = run({ id: "arun_nested", sessionID: "ses_nested", state: { type: "succeeded" }, created: 20 })
 
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_nested", "ses_child", 20), node("ses_child", rootID, 10)],
         active: [child],
         history: [nested],
@@ -79,6 +78,33 @@ describe("agents projection", () => {
     )
     expect(result.rows[0].freshness?.ageMs).toBe(20)
     expect(result.activeCount).toBe(1)
+  })
+
+  test("projects a rootless multi-tree overview and counts active child sessions", () => {
+    const first = run({ id: "arun_first", sessionID: "ses_first", state: { type: "running" }, created: 10 })
+    const resumed = run({
+      id: "arun_first_resume",
+      sessionID: "ses_first",
+      state: { type: "retrying", attempt: 1, message: "later", next: DateTime.makeUnsafe(50) },
+      created: 20,
+      previousRunID: first.id,
+    })
+    const second = run({ id: "arun_second", sessionID: "ses_second", state: { type: "running" }, created: 30 })
+
+    const result = projectAgents(
+      AgentRun.Overview.make({
+        nodes: [node("ses_second", "ses_root_b", 30), node("ses_first", "ses_root_a", 10)],
+        active: [first, resumed, second],
+        history: [],
+      }),
+      { now: 40 },
+    )
+
+    expect(result.rows.map((row) => [String(row.node.sessionID), row.depth, row.state?.type])).toEqual([
+      ["ses_first", 0, "retrying"],
+      ["ses_second", 0, "running"],
+    ])
+    expect(result.activeCount).toBe(2)
   })
 
   test("shows the 10 most recent terminal child sessions unless history is expanded", () => {
@@ -110,7 +136,7 @@ describe("agents projection", () => {
         previousRunID: "arun_terminal_11_resume_1",
       }),
     ]
-    const data = snapshot({
+    const data = overview({
       nodes: terminals.map((item) => item.node).reverse(),
       history: [...terminals.map((item) => item.run), ...resumed].reverse(),
     })
@@ -137,7 +163,7 @@ describe("agents projection", () => {
         created: index + 10,
       }),
     }))
-    const data = snapshot({
+    const data = overview({
       nodes: [
         ...recent.map((item) => item.node),
         node("ses_active", "ses_ancestor", 1),
@@ -162,7 +188,7 @@ describe("agents projection", () => {
 
   test("does not invent lifecycle data for structural ancestors without runs", () => {
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_parent"), node("ses_child", "ses_parent", 1)],
         active: [run({ id: "arun_child", sessionID: "ses_child", state: { type: "running" }, created: 1 })],
       }),
@@ -198,7 +224,7 @@ describe("agents projection", () => {
         created: index,
       }),
     )
-    const data = snapshot({
+    const data = overview({
       nodes: [
         node("ses_resumed", rootID, 100),
         ...singleRuns.map((item, index) => node(item.sessionID, rootID, index)),
@@ -233,11 +259,11 @@ describe("agents projection", () => {
       updated: 2_000,
       previousRunID: executing.id,
     })
-    const data = snapshot({ nodes: [node("ses_resumed")], active: [executing, queued] })
+    const data = overview({ nodes: [node("ses_resumed")], active: [executing, queued] })
 
     const waiting = projectAgents(data, { now: 3_000 })
     const started = projectAgents(
-      snapshot({
+      overview({
         nodes: data.nodes.slice(),
         active: [executing, { ...queued, time: { ...queued.time, started: DateTime.makeUnsafe(3_000) } }],
       }),
@@ -247,6 +273,111 @@ describe("agents projection", () => {
     expect(String(waiting.rows[0].current?.id)).toBe("arun_resume_1")
     expect(String(started.rows[0].current?.id)).toBe("arun_resume_2")
     expect(waiting.rows[0].runs.map((item) => String(item.id))).toEqual(["arun_resume_2", "arun_resume_1"])
+    expect([waiting.activeCount, started.activeCount]).toEqual([1, 1])
+  })
+
+  test("preserves an executing predecessor when a queued resume event arrives", () => {
+    const executing = run({
+      id: "arun_event_predecessor",
+      sessionID: "ses_event_resume",
+      state: { type: "running" },
+      created: 1_000,
+      started: 1_100,
+    })
+    const queued = run({
+      id: "arun_event_queued",
+      sessionID: "ses_event_resume",
+      state: { type: "running" },
+      created: 2_000,
+      previousRunID: executing.id,
+    })
+
+    const result = upsertAgentRun(overview({ nodes: [node("ses_event_resume")], active: [executing] }), queued)
+    const projection = projectAgents(result, { now: 3_000 })
+
+    expect(result.active.map((item) => String(item.id))).toEqual(["arun_event_predecessor", "arun_event_queued"])
+    expect(String(projection.rows[0].current?.id)).toBe("arun_event_predecessor")
+    expect(projection.activeCount).toBe(1)
+  })
+
+  test("keeps an executing predecessor when its queued resume terminates before starting", () => {
+    const executing = run({
+      id: "arun_cancelled_resume_predecessor",
+      sessionID: "ses_cancelled_resume",
+      state: { type: "running" },
+      created: 1_000,
+      started: 1_100,
+    })
+    const queued = run({
+      id: "arun_cancelled_resume",
+      sessionID: "ses_cancelled_resume",
+      state: { type: "running" },
+      created: 2_000,
+      previousRunID: executing.id,
+    })
+    const cancelled = run({
+      id: "arun_cancelled_resume",
+      sessionID: "ses_cancelled_resume",
+      state: { type: "cancelled" },
+      created: 2_000,
+      updated: 2_200,
+      previousRunID: executing.id,
+      version: 2,
+    })
+    const data = overview({ nodes: [node("ses_cancelled_resume")], active: [executing, queued] })
+
+    const result = upsertAgentRun(data, cancelled)
+    const projection = projectAgents(result, { now: 3_000 })
+    const started = projectAgents(
+      upsertAgentRun(data, { ...cancelled, time: { ...cancelled.time, started: DateTime.makeUnsafe(2_100) } }),
+      { now: 3_000 },
+    )
+
+    expect(result.active).toEqual([executing])
+    expect(result.history).toEqual([cancelled])
+    expect(String(projection.rows[0].current?.id)).toBe("arun_cancelled_resume_predecessor")
+    expect([projection.rows[0].state?.type, projection.activeCount]).toEqual(["running", 1])
+    expect(String(started.rows[0].current?.id)).toBe("arun_cancelled_resume")
+    expect([started.rows[0].state?.type, started.activeCount]).toEqual(["cancelled", 0])
+  })
+
+  test("does not cross a started terminal predecessor to resurrect an older active run", () => {
+    const executing = run({
+      id: "arun_terminal_barrier_active",
+      sessionID: "ses_terminal_barrier",
+      state: { type: "running" },
+      created: 1_000,
+      started: 1_100,
+    })
+    const barrier = run({
+      id: "arun_terminal_barrier_started",
+      sessionID: "ses_terminal_barrier",
+      state: { type: "succeeded" },
+      created: 2_000,
+      started: 2_100,
+      updated: 2_200,
+      previousRunID: executing.id,
+    })
+    const newest = run({
+      id: "arun_terminal_barrier_newest",
+      sessionID: "ses_terminal_barrier",
+      state: { type: "cancelled" },
+      created: 3_000,
+      updated: 3_100,
+      previousRunID: barrier.id,
+    })
+
+    const projection = projectAgents(
+      overview({
+        nodes: [node("ses_terminal_barrier")],
+        active: [executing],
+        history: [barrier, newest],
+      }),
+      { now: 4_000 },
+    )
+
+    expect(String(projection.rows[0].current?.id)).toBe("arun_terminal_barrier_newest")
+    expect([projection.rows[0].state?.type, projection.activeCount]).toEqual(["cancelled", 0])
   })
 
   test("keeps a queued resume current when its predecessor chain is terminal or cyclic", () => {
@@ -280,7 +411,7 @@ describe("agents projection", () => {
     })
 
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_terminal_resume"), node("ses_cycle_resume")],
         active: [queued, cycleA, cycleB],
         history: [terminal],
@@ -296,7 +427,7 @@ describe("agents projection", () => {
     )
   })
 
-  test("counts active child sessions rather than active runs", () => {
+  test("counts each active child session once", () => {
     const first = run({ id: "arun_multi_1", sessionID: "ses_multi", state: { type: "running" }, created: 1 })
     const resumed = run({
       id: "arun_multi_2",
@@ -313,7 +444,7 @@ describe("agents projection", () => {
       created: 4,
       previousRunID: staleActive.id,
     })
-    const data = snapshot({
+    const data = overview({
       nodes: [node("ses_done"), node("ses_multi")],
       active: [first, resumed, staleActive],
       history: [finished],
@@ -339,8 +470,8 @@ describe("agents projection", () => {
     const active = nodes.map((item, index) =>
       run({ id: `arun_guard_${index}`, sessionID: item.sessionID, state: { type: "running" }, created: index }),
     )
-    const forward = projectAgents(snapshot({ nodes, active }), { now: 100 })
-    const reversed = projectAgents(snapshot({ nodes: nodes.slice().reverse(), active: active.slice().reverse() }), {
+    const forward = projectAgents(overview({ nodes, active }), { now: 100 })
+    const reversed = projectAgents(overview({ nodes: nodes.slice().reverse(), active: active.slice().reverse() }), {
       now: 100,
     })
 
@@ -359,7 +490,7 @@ describe("agents projection", () => {
 
   test("ages started runs from the later of start and activity", () => {
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_quiet")],
         active: [
           run({
@@ -382,7 +513,7 @@ describe("agents projection", () => {
 
   test("never marks an unstarted run inactive", () => {
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_queued")],
         active: [
           run({ id: "arun_queued", sessionID: "ses_queued", state: { type: "running" }, created: 10, updated: 10 }),
@@ -404,7 +535,7 @@ describe("agents projection", () => {
       started: 1,
       updated: 1,
     })
-    const data = snapshot({ nodes: [node("ses_boundary")], active: [info] })
+    const data = overview({ nodes: [node("ses_boundary")], active: [info] })
 
     expect(projectAgents(data, { now: 60_000 }).rows[0].freshness?.inactive).toBeFalse()
     expect(projectAgents(data, { now: 60_001 }).rows[0].freshness?.inactive).toBeTrue()
@@ -412,7 +543,7 @@ describe("agents projection", () => {
 
   test("keeps terminal freshness age without marking the row inactive", () => {
     const result = projectAgents(
-      snapshot({
+      overview({
         nodes: [node("ses_finished")],
         history: [
           run({
@@ -439,7 +570,7 @@ describe("agents projection", () => {
       created: 10,
       version: 3,
     })
-    const data = snapshot({ nodes: [node("ses_versioned")], active: [current] })
+    const data = overview({ nodes: [node("ses_versioned")], active: [current] })
     const stale = run({
       id: "arun_versioned",
       sessionID: "ses_versioned",
@@ -456,7 +587,7 @@ describe("agents projection", () => {
     expect(result.history).toEqual([])
   })
 
-  test("collapses repeated snapshot records to the newest run version", () => {
+  test("collapses repeated overview records to the newest run version", () => {
     const stale = run({
       id: "arun_repeated",
       sessionID: "ses_repeated",
@@ -473,7 +604,7 @@ describe("agents projection", () => {
       version: 2,
     })
 
-    const result = projectAgents(snapshot({ nodes: [node("ses_repeated")], active: [stale], history: [current] }), {
+    const result = projectAgents(overview({ nodes: [node("ses_repeated")], active: [stale], history: [current] }), {
       now: 30,
     })
 
@@ -481,7 +612,7 @@ describe("agents projection", () => {
     expect([result.rows[0].state?.type, result.rows[0].resumeCount, result.activeCount]).toEqual(["succeeded", 0, 0])
   })
 
-  test("moves a terminal child session out of active without dropping its runs", () => {
+  test("moves only the updated terminal run to history", () => {
     const previous = run({ id: "arun_move_1", sessionID: "ses_move", state: { type: "running" }, created: 1 })
     const current = run({
       id: "arun_move_2",
@@ -500,13 +631,13 @@ describe("agents projection", () => {
       previousRunID: previous.id,
       version: 2,
     })
-    const data = snapshot({ nodes: [node("ses_move")], active: [previous, current] })
+    const data = overview({ nodes: [node("ses_move")], active: [previous, current] })
 
     const result = upsertAgentRun(data, terminal)
     const row = projectAgents(result, { now: 4 }).rows[0]
 
-    expect(result.active).toEqual([])
-    expect(result.history.map((item) => String(item.id))).toEqual(["arun_move_2", "arun_move_1"])
+    expect(result.active).toEqual([previous])
+    expect(result.history.map((item) => String(item.id))).toEqual(["arun_move_2"])
     expect([row.state?.type, row.resumeCount, row.active]).toEqual(["succeeded", 1, false])
   })
 })

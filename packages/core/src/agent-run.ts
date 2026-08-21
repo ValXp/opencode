@@ -27,6 +27,9 @@ export type Info = AgentRun.Info
 export const Snapshot = AgentRun.Snapshot
 export type Snapshot = AgentRun.Snapshot
 
+export const Overview = AgentRun.Overview
+export type Overview = AgentRun.Overview
+
 export const Event = AgentRun.Event
 
 export interface AdmitInput {
@@ -95,6 +98,7 @@ export interface Interface {
   readonly touch: (input: TouchInput) => Effect.Effect<ActivityCapture | undefined>
   readonly summarize: (input: SummarizeInput) => Effect.Effect<Info | undefined>
   readonly snapshot: (rootSessionID: Info["sessionID"]) => Effect.Effect<Snapshot>
+  readonly overview: () => Effect.Effect<Overview>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/AgentRun") {}
@@ -385,6 +389,106 @@ export const layerWith = (options: LayerOptions = {}) =>
           .pipe(Effect.orDie)
       })
 
+      const overview = Effect.fn("AgentRun.overview")(function* () {
+        return yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const active = (yield* tx
+                .select()
+                .from(AgentRunTable)
+                .where(inArray(AgentRunTable.state_type, ["running", "retrying"]))
+                .orderBy(asc(AgentRunTable.time_created), asc(AgentRunTable.id))
+                .all()).map(fromRow)
+              if (options.afterActiveRead) yield* options.afterActiveRead
+              const latestHistory = (yield* tx
+                .select()
+                .from(AgentRunTable)
+                .where(isNotNull(AgentRunTable.time_finished))
+                .orderBy(desc(AgentRunTable.time_finished), desc(AgentRunTable.id))
+                .limit(SNAPSHOT_HISTORY_LIMIT)
+                .all()).map(fromRow)
+              const successors = (yield* tx
+                .select()
+                .from(AgentRunTable)
+                .where(
+                  and(
+                    isNotNull(AgentRunTable.time_finished),
+                    sql`EXISTS (
+                      SELECT 1
+                      FROM agent_run AS active
+                      WHERE active.session_id = ${AgentRunTable.session_id}
+                        AND active.state_type IN ('running', 'retrying')
+                        AND (
+                          active.time_created < ${AgentRunTable.time_created}
+                          OR (
+                            active.time_created = ${AgentRunTable.time_created}
+                            AND active.id < ${AgentRunTable.id}
+                          )
+                        )
+                    )`,
+                    sql`NOT EXISTS (
+                      SELECT 1
+                      FROM agent_run AS newer
+                      WHERE newer.session_id = ${AgentRunTable.session_id}
+                        AND newer.time_finished IS NOT NULL
+                        AND (
+                          newer.time_created > ${AgentRunTable.time_created}
+                          OR (
+                            newer.time_created = ${AgentRunTable.time_created}
+                            AND newer.id > ${AgentRunTable.id}
+                          )
+                        )
+                    )`,
+                  ),
+                )
+                .orderBy(desc(AgentRunTable.time_finished), desc(AgentRunTable.id))
+                .all()).map(fromRow)
+              const latestHistoryIDs = new Set(latestHistory.map((run) => run.id))
+              const history = latestHistory.concat(successors.filter((run) => !latestHistoryIDs.has(run.id)))
+              const sessionIDs = Array.from(new Set(active.concat(history).map((run) => run.sessionID)))
+              if (sessionIDs.length === 0) return Overview.make({ nodes: [], active, history })
+
+              const rows = yield* tx.all<SessionNodeRow>(sql`
+                WITH RECURSIVE ancestors(session_id, parent_session_id, title, agent, created_at) AS (
+                  SELECT id, parent_id, title, agent, time_created
+                  FROM session
+                  WHERE id IN (${sql.join(
+                    sessionIDs.map((sessionID) => sql`${sessionID}`),
+                    sql`, `,
+                  )})
+                  UNION
+                  SELECT
+                    parent.id,
+                    parent.parent_id,
+                    parent.title,
+                    parent.agent,
+                    parent.time_created
+                  FROM session AS parent
+                  INNER JOIN ancestors AS child ON parent.id = child.parent_session_id
+                )
+                SELECT session_id, parent_session_id, title, agent, created_at
+                FROM ancestors
+                WHERE parent_session_id IS NOT NULL
+                ORDER BY created_at, session_id
+              `)
+              return Overview.make({
+                nodes: rows.map((row) =>
+                  Node.make({
+                    sessionID: Session.ID.make(row.session_id),
+                    parentSessionID: Session.ID.make(row.parent_session_id),
+                    title: row.title,
+                    agent: row.agent ? Agent.ID.make(row.agent) : undefined,
+                    createdAt: DateTime.makeUnsafe(row.created_at),
+                  }),
+                ),
+                active,
+                history,
+              })
+            }),
+          )
+          .pipe(Effect.orDie)
+      })
+
       const admit = Effect.fn("AgentRun.admit")(function* (input: AdmitInput) {
         const now = yield* Clock.currentTimeMillis
         const admitted = yield* db
@@ -437,7 +541,7 @@ export const layerWith = (options: LayerOptions = {}) =>
         return admitted
       })
 
-      return Service.of({ admit, get, findBySource, start, transition, touch, summarize, snapshot })
+      return Service.of({ admit, get, findBySource, start, transition, touch, summarize, snapshot, overview })
     }),
   )
 

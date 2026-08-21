@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
-import { decodeAgentRunEvent, deriveRootSessionID, fetchAgentRunSnapshot } from "./source"
+import { decodeAgentRunEvent, fetchAgentRunOverview } from "./source"
 
 const encoded = {
-  rootSessionID: "ses_root",
   nodes: [
     {
       sessionID: "ses_child",
@@ -94,51 +93,25 @@ describe("agent run source", () => {
     ).toBeUndefined()
   })
 
-  test("loads and decodes the current agent-run endpoint with target-server auth", async () => {
+  test("loads and decodes the server-wide agent-run overview with target-server auth", async () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
-    async function fetchSnapshot(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+    async function fetchOverview(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
       expect(this).toBeUndefined()
       requests.push({ input, init })
       return Response.json(encoded)
     }
 
-    const result = await fetchAgentRunSnapshot({
+    const result = await fetchAgentRunOverview({
       server: { url: "https://target.example/base", username: "agent", password: "secret" },
-      fetch: fetchSnapshot,
-      rootSessionID: "ses_root",
+      fetch: fetchOverview,
     })
 
     const request = requests[0]?.input
-    expect(request instanceof Request ? request.url : String(request)).toBe(
-      "https://target.example/api/session/ses_root/agent-run",
-    )
+    expect(request instanceof Request ? request.url : String(request)).toBe("https://target.example/api/agent-run")
     expect(requests[0]?.init?.method).toBe("GET")
     expect(new Headers(requests[0]?.init?.headers).get("authorization")).toBe(`Basic ${btoa("agent:secret")}`)
     expect(new Headers(requests[0]?.init?.headers).has("x-opencode-directory")).toBeFalse()
-    expect(String(result.rootSessionID)).toBe("ses_root")
+    expect("rootSessionID" in result).toBeFalse()
     expect(DateTime.toEpochMillis(result.active[0].activity.at)).toBe(2_000)
-  })
-
-  test("derives the highest known parent and a deterministic safe cycle ID", () => {
-    const sessions: Record<string, { id: string; parentID?: string }> = {
-      ses_leaf: { id: "ses_leaf", parentID: "ses_child" },
-      ses_child: { id: "ses_child", parentID: "ses_root" },
-      ses_root: { id: "ses_root" },
-      ses_missing_leaf: { id: "ses_missing_leaf", parentID: "ses_not_loaded" },
-      ses_partial_leaf: { id: "ses_partial_leaf", parentID: "ses_partial_child" },
-      ses_partial_child: { id: "ses_partial_child", parentID: "ses_missing_root" },
-      ses_cycle_a: { id: "ses_cycle_a", parentID: "ses_cycle_b" },
-      ses_cycle_b: { id: "ses_cycle_b", parentID: "ses_cycle_a" },
-      ses_self_cycle: { id: "ses_self_cycle", parentID: "ses_self_cycle" },
-    }
-    const get = (sessionID: string) => sessions[sessionID]
-
-    expect(deriveRootSessionID("ses_leaf", get)).toBe("ses_root")
-    expect(deriveRootSessionID("ses_missing_leaf", get)).toBe("ses_not_loaded")
-    expect(deriveRootSessionID("ses_partial_leaf", get)).toBe("ses_missing_root")
-    expect(deriveRootSessionID("ses_cycle_a", get)).toBe("ses_cycle_a")
-    expect(deriveRootSessionID("ses_cycle_b", get)).toBe("ses_cycle_a")
-    expect(deriveRootSessionID("ses_self_cycle", get)).toBe("ses_self_cycle")
-    expect(deriveRootSessionID("ses_not_loaded", get)).toBeUndefined()
   })
 })

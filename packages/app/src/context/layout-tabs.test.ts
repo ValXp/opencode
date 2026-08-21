@@ -69,6 +69,12 @@ describe("openSessionTab", () => {
     )
   })
 
+  test("reactivates Agents without duplicating it or consuming the file preview", () => {
+    expect(
+      openSessionTab(state([SESSION_AGENTS_TAB, "file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_AGENTS_TAB),
+    ).toEqual(state([SESSION_AGENTS_TAB, "file://a.ts"], SESSION_AGENTS_TAB, "file://a.ts"))
+  })
+
   test("persists Pages without replacing the file preview", () => {
     expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), SESSION_PRESENT_PAGE_TAB)).toEqual(
       state([SESSION_PRESENT_PAGE_TAB, "file://a.ts"], SESSION_PRESENT_PAGE_TAB, "file://a.ts"),

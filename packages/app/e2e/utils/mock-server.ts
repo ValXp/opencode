@@ -29,6 +29,7 @@ export interface MockServerConfig {
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown | Promise<unknown>
   sessionStatus?: Record<string, unknown> | (() => Record<string, unknown>)
   agentRun?: (sessionID: string) => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
+  agentRunOverview?: () => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -217,6 +218,10 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
           ),
         ),
       })
+    }
+    if (path === "/api/agent-run") {
+      const result = await config.agentRunOverview?.()
+      return json(route, result?.body ?? { nodes: [], active: [], history: [] }, undefined, result?.status)
     }
     const agentRunMatch = path.match(/^\/api\/session\/([^/]+)\/agent-run$/)
     if (agentRunMatch && config.agentRun) {

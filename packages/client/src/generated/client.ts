@@ -9,6 +9,7 @@ import type {
   SessionsCreateInput,
   SessionsCreateOutput,
   SessionsActiveOutput,
+  SessionsAgentRunOverviewOutput,
   SessionsGetInput,
   SessionsGetOutput,
   SessionsAgentRunInput,
@@ -334,6 +335,11 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      agentRunOverview: (requestOptions?: RequestOptions) =>
+        request<SessionsAgentRunOverviewOutput>(
+          { method: "GET", path: `/api/agent-run`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
+          requestOptions,
+        ),
       get: (input: SessionsGetInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsGetOutput }>(
           {

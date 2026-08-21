@@ -32,7 +32,7 @@ export function AgentsPanel(props: AgentsPanelProps) {
     >
       <header class="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border-weaker-base px-3">
         <h2 class="text-13-medium text-text-strong">{language.t("settings.agents.title")}</h2>
-        <span class="text-11-regular text-text-weak">
+        <span data-slot="agents-summary" dir="auto" class="text-11-regular text-text-weak">
           {language.t("session.agents.summary", {
             active: props.projection.activeCount,
             total: props.projection.totalCount,

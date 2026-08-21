@@ -156,6 +156,17 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       ),
     )
     .add(
+      HttpApiEndpoint.get("session.agentRunOverview", "/api/agent-run", {
+        success: AgentRun.Overview,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.agentRunOverview",
+          summary: "List agent runs",
+          description: "Retrieve active agent runs and recent terminal history across all sessions.",
+        }),
+      ),
+    )
+    .add(
       HttpApiEndpoint.get("session.get", "/api/session/:sessionID", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Session.Info }),

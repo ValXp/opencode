@@ -4005,6 +4005,12 @@ export type AgentRunNode = {
   createdAt: number
 }
 
+export type AgentRunOverview = {
+  nodes: Array<AgentRunNode>
+  active: Array<AgentRunInfo>
+  history: Array<AgentRunInfo>
+}
+
 export type AgentRunSnapshot = {
   rootSessionID: string
   nodes: Array<AgentRunNode>
@@ -11546,6 +11552,36 @@ export type V2SessionActiveResponses = {
 }
 
 export type V2SessionActiveResponse = V2SessionActiveResponses[keyof V2SessionActiveResponses]
+
+export type V2SessionAgentRunOverviewData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/agent-run"
+}
+
+export type V2SessionAgentRunOverviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SessionAgentRunOverviewError = V2SessionAgentRunOverviewErrors[keyof V2SessionAgentRunOverviewErrors]
+
+export type V2SessionAgentRunOverviewResponses = {
+  /**
+   * AgentRun.Overview
+   */
+  200: AgentRunOverview
+}
+
+export type V2SessionAgentRunOverviewResponse =
+  V2SessionAgentRunOverviewResponses[keyof V2SessionAgentRunOverviewResponses]
 
 export type V2SessionGetData = {
   body?: never

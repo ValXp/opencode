@@ -3,10 +3,9 @@ import { DateTime, Option, Schema } from "effect"
 import type { ServerConnection } from "@/context/server"
 import { authTokenFromCredentials } from "@/utils/server"
 
-const decodeSnapshot = Schema.decodeUnknownPromise(AgentRun.Snapshot)
+const decodeOverview = Schema.decodeUnknownPromise(AgentRun.Overview)
 const decodeInfo = Schema.decodeUnknownOption(AgentRun.Info)
 
-type LoadedSession = { id: string; parentID?: string }
 type AgentRunFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -56,50 +55,24 @@ export function serverConnectedEventID(event: unknown) {
   return typeof event.id === "string" ? event.id : undefined
 }
 
-export function deriveRootSessionID(
-  sessionID: string | undefined,
-  get: (sessionID: string) => LoadedSession | undefined,
-): string | undefined {
-  if (!sessionID || !get(sessionID)) return undefined
-
-  const path: string[] = []
-  const positions = new Map<string, number>()
-  const visit = (id: string): string => {
-    const position = positions.get(id)
-    if (position !== undefined) return path.slice(position).sort()[0] ?? id
-    const session = get(id)
-    if (!session) return id
-    positions.set(id, path.length)
-    path.push(id)
-    if (!session.parentID) return session.id
-    return visit(session.parentID)
-  }
-
-  return visit(sessionID)
-}
-
-export async function fetchAgentRunSnapshot(input: {
+export async function fetchAgentRunOverview(input: {
   server: ServerConnection.HttpBase
   fetch: AgentRunFetch
-  rootSessionID: string
   signal?: AbortSignal
 }) {
-  const fetchSnapshot = input.fetch
-  const response = await fetchSnapshot(
-    new URL(`/api/session/${encodeURIComponent(input.rootSessionID)}/agent-run`, input.server.url),
-    {
-      method: "GET",
-      headers: input.server.password
-        ? {
-            Authorization: `Basic ${authTokenFromCredentials({
-              username: input.server.username,
-              password: input.server.password,
-            })}`,
-          }
-        : undefined,
-      signal: input.signal,
-    },
-  )
+  const fetchOverview = input.fetch
+  const response = await fetchOverview(new URL("/api/agent-run", input.server.url), {
+    method: "GET",
+    headers: input.server.password
+      ? {
+          Authorization: `Basic ${authTokenFromCredentials({
+            username: input.server.username,
+            password: input.server.password,
+          })}`,
+        }
+      : undefined,
+    signal: input.signal,
+  })
   if (!response.ok) throw new Error(`Failed to load agent runs: ${response.status} ${response.statusText}`.trim())
-  return decodeSnapshot(await response.json())
+  return decodeOverview(await response.json())
 }

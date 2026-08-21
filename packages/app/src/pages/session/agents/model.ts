@@ -1,7 +1,7 @@
 import type { AgentRun } from "@opencode-ai/schema"
 import { DateTime } from "effect"
 
-type SessionID = AgentRun.Snapshot["rootSessionID"]
+type SessionID = AgentRun.Node["sessionID"]
 const INACTIVE_AFTER_MS = 60_000
 
 export interface AgentRow {
@@ -35,15 +35,15 @@ export interface ProjectAgentsOptions {
   readonly inactiveAfterMs?: number
 }
 
-export function projectAgents(snapshot: AgentRun.Snapshot, options: ProjectAgentsOptions): AgentsProjection {
+export function projectAgents(overview: AgentRun.Overview, options: ProjectAgentsOptions): AgentsProjection {
   const runsBySession = new Map<SessionID, AgentRun.Info[]>()
-  snapshot.active.concat(snapshot.history).forEach((run) => {
+  overview.active.concat(overview.history).forEach((run) => {
     const runs = runsBySession.get(run.sessionID) ?? []
     runs.push(run)
     runsBySession.set(run.sessionID, runs)
   })
   runsBySession.forEach((runs, sessionID) => runsBySession.set(sessionID, orderRuns(runs)))
-  const forest = buildForest(snapshot)
+  const forest = buildForest(overview)
   const currentBySession = new Map(
     [...runsBySession].flatMap(([sessionID, runs]) => {
       const current = selectCurrentRun(runs)
@@ -68,7 +68,7 @@ export function projectAgents(snapshot: AgentRun.Snapshot, options: ProjectAgent
   const context = new Set<SessionID>()
   const includeAncestors = (sessionID: SessionID, seen: Set<SessionID>) => {
     const parentSessionID = forest.parents.get(sessionID)
-    if (!parentSessionID || parentSessionID === snapshot.rootSessionID || seen.has(parentSessionID)) return
+    if (!parentSessionID || seen.has(parentSessionID)) return
     seen.add(parentSessionID)
     context.add(parentSessionID)
     includeAncestors(parentSessionID, seen)
@@ -79,30 +79,28 @@ export function projectAgents(snapshot: AgentRun.Snapshot, options: ProjectAgent
 
   const rows: AgentRow[] = []
   const visited = new Set<SessionID>()
-  const visit = (parentSessionID: SessionID, depth: number) => {
-    forest.children.get(parentSessionID)?.forEach((node) => {
-      if (visited.has(node.sessionID)) return
-      visited.add(node.sessionID)
-      const runs = runsBySession.get(node.sessionID)
-      if (selected.has(node.sessionID) || context.has(node.sessionID)) {
-        const current = currentBySession.get(node.sessionID)
-        const active = current?.state.type === "running" || current?.state.type === "retrying"
-        rows.push({
-          node,
-          depth,
-          runs: runs ?? [],
-          current,
-          state: current?.state,
-          active,
-          resumeCount: Math.max(0, (runs?.length ?? 0) - 1),
-          contextOnly: !selected.has(node.sessionID),
-          freshness: current ? getFreshness(current, options) : undefined,
-        })
-      }
-      visit(node.sessionID, depth + 1)
-    })
+  const visit = (node: AgentRun.Node, depth: number) => {
+    if (visited.has(node.sessionID)) return
+    visited.add(node.sessionID)
+    const runs = runsBySession.get(node.sessionID)
+    if (selected.has(node.sessionID) || context.has(node.sessionID)) {
+      const current = currentBySession.get(node.sessionID)
+      const active = current?.state.type === "running" || current?.state.type === "retrying"
+      rows.push({
+        node,
+        depth,
+        runs: runs ?? [],
+        current,
+        state: current?.state,
+        active,
+        resumeCount: Math.max(0, (runs?.length ?? 0) - 1),
+        contextOnly: !selected.has(node.sessionID),
+        freshness: current ? getFreshness(current, options) : undefined,
+      })
+    }
+    forest.children.get(node.sessionID)?.forEach((child) => visit(child, depth + 1))
   }
-  visit(snapshot.rootSessionID, 0)
+  forest.roots.forEach((node) => visit(node, 0))
 
   return {
     rows,
@@ -112,19 +110,16 @@ export function projectAgents(snapshot: AgentRun.Snapshot, options: ProjectAgent
   }
 }
 
-export function upsertAgentRun(snapshot: AgentRun.Snapshot, info: AgentRun.Info): AgentRun.Snapshot {
-  const runs = snapshot.active.concat(snapshot.history)
+export function upsertAgentRun(overview: AgentRun.Overview, info: AgentRun.Info): AgentRun.Overview {
+  const runs = overview.active.concat(overview.history)
   const existing = runs.filter((run) => run.id === info.id).sort((a, b) => b.version - a.version)[0]
-  if (existing && existing.version >= info.version) return snapshot
+  if (existing && existing.version >= info.version) return overview
 
-  const sessionRuns = orderRuns([...runs.filter((run) => run.id !== info.id && run.sessionID === info.sessionID), info])
-  const active = snapshot.active.filter((run) => run.id !== info.id && run.sessionID !== info.sessionID)
-  const history = snapshot.history.filter((run) => run.id !== info.id && run.sessionID !== info.sessionID)
-  const current = sessionRuns[0]
-  if (current.state.type === "running" || current.state.type === "retrying") {
-    return { ...snapshot, active: [...active, current], history: [...history, ...sessionRuns.slice(1)] }
-  }
-  return { ...snapshot, active, history: [...history, ...sessionRuns] }
+  const active = overview.active.filter((run) => run.id !== info.id)
+  const history = overview.history.filter((run) => run.id !== info.id)
+  if (info.state.type === "running" || info.state.type === "retrying")
+    return { ...overview, active: [...active, info], history }
+  return { ...overview, active, history: [...history, info] }
 }
 
 function compare(a: string, b: string) {
@@ -140,28 +135,21 @@ function compareNodes(a: AgentRun.Node, b: AgentRun.Node) {
   )
 }
 
-function buildForest(snapshot: AgentRun.Snapshot) {
-  const ordered = snapshot.nodes
-    .filter((node) => node.sessionID !== snapshot.rootSessionID)
-    .slice()
-    .sort(compareNodes)
+function buildForest(overview: AgentRun.Overview) {
+  const ordered = overview.nodes.slice().sort(compareNodes)
   const nodes = new Map<SessionID, AgentRun.Node>()
   ordered.forEach((node) => {
     if (!nodes.has(node.sessionID)) nodes.set(node.sessionID, node)
   })
   const parents = new Map<SessionID, SessionID>(
-    [...nodes.values()].map((node) => [
-      node.sessionID,
-      node.parentSessionID === snapshot.rootSessionID || nodes.has(node.parentSessionID)
-        ? node.parentSessionID
-        : snapshot.rootSessionID,
-    ]),
+    [...nodes.values()].flatMap((node) =>
+      nodes.has(node.parentSessionID) ? [[node.sessionID, node.parentSessionID] as const] : [],
+    ),
   )
   const breakCycle = (start: SessionID) => {
     const path: SessionID[] = []
     const positions = new Map<SessionID, number>()
     const visit = (sessionID: SessionID): void => {
-      if (sessionID === snapshot.rootSessionID) return
       const position = positions.get(sessionID)
       if (position !== undefined) {
         const root = path
@@ -169,7 +157,7 @@ function buildForest(snapshot: AgentRun.Snapshot) {
           .map((id) => nodes.get(id))
           .filter((node): node is AgentRun.Node => node !== undefined)
           .sort(compareNodes)[0]
-        if (root) parents.set(root.sessionID, snapshot.rootSessionID)
+        if (root) parents.delete(root.sessionID)
         return
       }
       const parentSessionID = parents.get(sessionID)
@@ -184,13 +172,19 @@ function buildForest(snapshot: AgentRun.Snapshot) {
 
   const children = new Map<SessionID, AgentRun.Node[]>()
   nodes.forEach((node) => {
-    const parentSessionID = parents.get(node.sessionID) ?? snapshot.rootSessionID
+    const parentSessionID = parents.get(node.sessionID)
+    if (!parentSessionID) return
     const siblings = children.get(parentSessionID) ?? []
     siblings.push(node)
     children.set(parentSessionID, siblings)
   })
   children.forEach((siblings) => siblings.sort(compareNodes))
-  return { children, nodes, parents }
+  return {
+    children,
+    nodes,
+    parents,
+    roots: [...nodes.values()].filter((node) => !parents.has(node.sessionID)).sort(compareNodes),
+  }
 }
 
 function getFreshness(run: AgentRun.Info, options: ProjectAgentsOptions) {
@@ -239,16 +233,16 @@ function orderRuns(runs: AgentRun.Info[]) {
 
 function selectCurrentRun(runs: readonly AgentRun.Info[]) {
   const newest = runs[0]
-  if (!newest || newest.time.started || (newest.state.type !== "running" && newest.state.type !== "retrying")) {
-    return newest
-  }
+  if (!newest || newest.time.started) return newest
   const byID = new Map(runs.map((run) => [run.id, run]))
   const visited = new Set<AgentRun.ID>([newest.id])
   const executingPredecessor = (run: AgentRun.Info): AgentRun.Info | undefined => {
     const previous = run.previousRunID && !visited.has(run.previousRunID) ? byID.get(run.previousRunID) : undefined
-    if (!previous || (previous.state.type !== "running" && previous.state.type !== "retrying")) return undefined
+    if (!previous) return undefined
     visited.add(previous.id)
-    return previous.time.started ? previous : executingPredecessor(previous)
+    if (!previous.time.started) return executingPredecessor(previous)
+    if (previous.state.type === "running" || previous.state.type === "retrying") return previous
+    return undefined
   }
   return executingPredecessor(newest) ?? newest
 }

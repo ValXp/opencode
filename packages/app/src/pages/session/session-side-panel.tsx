@@ -189,7 +189,6 @@ export function SessionSidePanel(props: {
     fileBrowser: () => !!props.fileBrowserState,
   })
   const contextOpen = tabState.contextOpen
-  const agentsOpen = tabState.agentsOpen
   const presentPageOpen = tabState.presentPageOpen
   const openFileOpen = tabState.openFileOpen
   const panelTabs = tabState.panelTabs
@@ -226,7 +225,7 @@ export function SessionSidePanel(props: {
   }
   const activateTab = (value: string) => {
     const next = normalizeTab(value)
-    if (next === SESSION_PRESENT_PAGE_TAB) {
+    if (next === SESSION_AGENTS_TAB || next === SESSION_PRESENT_PAGE_TAB) {
       openReviewPanel()
       void tabs().open(next)
       return
@@ -387,14 +386,12 @@ export function SessionSidePanel(props: {
                                   </div>
                                 </Tabs.Trigger>
                               </Show>
-                              <Show when={agentsOpen()}>
-                                <Tabs.Trigger value={SESSION_AGENTS_TAB}>
-                                  <div class="flex items-center gap-1.5">
-                                    <Icon name="subagent" size="small" />
-                                    <span>{language.t("settings.agents.title")}</span>
-                                  </div>
-                                </Tabs.Trigger>
-                              </Show>
+                              <Tabs.Trigger value={SESSION_AGENTS_TAB}>
+                                <div class="flex items-center gap-1.5">
+                                  <Icon name="subagent" size="small" />
+                                  <span>{language.t("settings.agents.title")}</span>
+                                </div>
+                              </Tabs.Trigger>
                               <Show when={presentPageCount() > 0 || presentPageOpen()}>
                                 <Tabs.Trigger value={SESSION_PRESENT_PAGE_TAB}>
                                   <div class="flex items-center gap-1.5">
@@ -634,14 +631,12 @@ export function SessionSidePanel(props: {
                                   : language.t("session.tab.review")}
                               </Tabs.Trigger>
                             </Show>
-                            <Show when={agentsOpen()}>
-                              <Tabs.Trigger value={SESSION_AGENTS_TAB}>
-                                <div class="flex items-center gap-1.5">
-                                  <Icon name="subagent" size="small" />
-                                  <span>{language.t("settings.agents.title")}</span>
-                                </div>
-                              </Tabs.Trigger>
-                            </Show>
+                            <Tabs.Trigger value={SESSION_AGENTS_TAB}>
+                              <div class="flex items-center gap-1.5">
+                                <Icon name="subagent" size="small" />
+                                <span>{language.t("settings.agents.title")}</span>
+                              </div>
+                            </Tabs.Trigger>
                             <Show when={presentPageCount() > 0 || presentPageOpen()}>
                               <Tabs.Trigger value={SESSION_PRESENT_PAGE_TAB}>
                                 <div class="flex items-center gap-1.5">

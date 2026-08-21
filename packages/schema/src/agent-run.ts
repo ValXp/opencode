@@ -81,6 +81,13 @@ export const Snapshot = Schema.Struct({
   history: Schema.Array(Info),
 }).annotate({ identifier: "AgentRun.Snapshot" })
 
+export interface Overview extends Schema.Schema.Type<typeof Overview> {}
+export const Overview = Schema.Struct({
+  nodes: Schema.Array(Node),
+  active: Schema.Array(Info),
+  history: Schema.Array(Info),
+}).annotate({ identifier: "AgentRun.Overview" })
+
 const Updated = define({
   type: "agent.run.updated",
   schema: { info: Info },

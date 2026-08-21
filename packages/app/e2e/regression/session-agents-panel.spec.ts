@@ -3,11 +3,15 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 
 const directory = "C:/OpenCode/SessionAgentsPanel"
+const otherDirectory = "C:/OpenCode/SessionAgentsPanelOther"
 const projectID = "proj_session_agents_panel"
 const rootID = "ses_agents_root"
 const childID = "ses_agents_child"
+const otherRootID = "ses_agents_other_root"
+const otherChildID = "ses_agents_other_child"
 const rootTitle = "Agents root session"
 const childTitle = "Focused child agent"
+const otherChildTitle = "Agent from another session"
 const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
 const layouts = [
   { name: "new layout", enabled: true },
@@ -87,6 +91,86 @@ test("shows the active agent count in the persistent header while the workspace 
 })
 
 for (const layout of layouts) {
+  test(`shows active agents from every session tree and opens a cross-directory session in the ${layout.name}`, async ({
+    page,
+  }) => {
+    const other = run({
+      id: "arun_agents_other_child",
+      sessionID: otherChildID,
+      callerSessionID: otherRootID,
+      description: "Work in another root session",
+      state: { type: "running" },
+      version: 1,
+    })
+    await setup(page, {
+      agentRun: (sessionID) => ({ body: snapshot(sessionID) }),
+      agentRunOverview: () => ({ body: overview(run({ state: { type: "running" }, version: 1 }), other) }),
+      sessions: [
+        session(otherRootID, "Other root session", 1_700_000_003_000, { directory: otherDirectory }),
+        session(otherChildID, otherChildTitle, 1_700_000_004_000, {
+          directory: otherDirectory,
+          parentID: otherRootID,
+        }),
+      ],
+      newLayoutDesigns: layout.enabled,
+    })
+
+    await page.goto(sessionHref(rootID), { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("heading", { name: rootTitle })).toBeVisible({ timeout: 60_000 })
+
+    const trigger = page.locator('[data-slot="session-agents-header-trigger"]')
+    await expect(trigger).toHaveAttribute("data-active-count", "2")
+    await trigger.click()
+
+    const panel = page.locator('[data-component="agents-panel"]')
+    await expect(panel.locator('[data-component="agent-run-row"]')).toHaveCount(2)
+    await expect(panel).toContainText(childTitle)
+    await expect(panel).toContainText(otherChildTitle)
+
+    const row = panel.getByRole("listitem").filter({ hasText: otherChildTitle })
+    await row.getByRole("button", { name: new RegExp(otherChildTitle) }).click()
+    await row.getByRole("button", { name: "Open session" }).click()
+
+    await expect(page).toHaveURL(
+      layout.enabled
+        ? new RegExp(`/server/[^/]+/session/${otherChildID}$`)
+        : new RegExp(`/${base64Encode(otherDirectory)}/session/${otherChildID}$`),
+    )
+    await expect(page.getByRole("heading", { name: otherChildTitle })).toBeVisible()
+  })
+}
+
+for (const layout of layouts) {
+  test(`keeps the Agents workspace tab available without using the header indicator in the ${layout.name}`, async ({
+    page,
+  }) => {
+    await setup(page, {
+      agentRun: (sessionID) => ({ body: snapshot(sessionID) }),
+      newLayoutDesigns: layout.enabled,
+    })
+
+    await page.goto(sessionHref(rootID), { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("heading", { name: rootTitle })).toBeVisible({ timeout: 60_000 })
+
+    await page.getByRole("button", { name: "Toggle review" }).click()
+    const tab = page.getByRole("tab", { name: "Agents" })
+    await expect(tab).toBeVisible()
+    await expect(tab.locator('[data-slot="tabs-trigger-close-button"]')).toHaveCount(0)
+
+    await tab.click()
+    await expect(page.locator('[data-component="agents-panel"]')).toBeVisible()
+
+    await page.getByRole("tab", { name: "Review" }).click()
+    await expect(tab).toBeVisible()
+    await tab.click()
+    await expect(page.locator('[data-component="agents-panel"]')).toBeVisible()
+
+    await page.getByRole("button", { name: "Toggle review" }).click()
+    await expect(page.locator("#review-panel")).toHaveCount(0)
+    await page.getByRole("button", { name: "Toggle review" }).click()
+    await expect(page.getByRole("tab", { name: "Agents" })).toBeVisible()
+  })
+
   test(`opens the persistent agents workspace tab from the desktop header in the ${layout.name}`, async ({ page }) => {
     await setup(page, {
       agentRun: (sessionID) => ({ body: snapshot(sessionID) }),
@@ -264,25 +348,39 @@ test("anchors the mobile agents drawer and nested hierarchy to logical end in fo
   await expect(page.getByRole("heading", { name: rootTitle })).toBeVisible({ timeout: 60_000 })
   await page.getByRole("button", { name: "DIR: LTR" }).click()
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl")
+  await page.getByRole("button", { name: "Toggle review" }).click()
+  await expect(page.getByRole("tab", { name: "Agents" })).toBeVisible()
+  await page.getByRole("button", { name: "Toggle review" }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.locator('[data-slot="session-agents-header-trigger"]').click()
 
   const drawer = page.getByRole("dialog", { name: "Agents" })
   await expect(drawer).toHaveAttribute("data-side", "left")
   await expect(drawer).toHaveCSS("left", "6px")
+  const summary = drawer.locator('[data-slot="agents-summary"]')
+  await expect(summary).toHaveAttribute("dir", "auto")
+  await expect.poll(() => summary.evaluate((element) => getComputedStyle(element).direction)).toBe("ltr")
   const row = drawer.getByRole("listitem").filter({ hasText: childTitle })
+  const title = row.locator('[data-slot="agent-title"]')
+  await expect(title).toHaveAttribute("dir", "auto")
+  await expect.poll(() => title.evaluate((element) => getComputedStyle(element).direction)).toBe("ltr")
+  const activity = row.locator('[data-slot="agent-activity"]')
+  await expect(activity).not.toHaveAttribute("dir", "auto")
+  await expect.poll(() => activity.evaluate((element) => getComputedStyle(element).direction)).toBe("rtl")
+  await expect(activity).toHaveCSS("padding-right", "24px")
+  const activityText = activity.locator('[data-slot="agent-activity-text"]')
+  await expect(activityText).toHaveAttribute("dir", "auto")
+  await expect.poll(() => activityText.evaluate((element) => getComputedStyle(element).direction)).toBe("ltr")
   await expect.poll(() => row.evaluate((element) => getComputedStyle(element).paddingInlineStart)).toBe("20px")
-  await expect
-    .poll(() =>
-      row.locator('[data-slot="agent-activity"]').evaluate((element) => getComputedStyle(element).paddingInlineStart),
-    )
-    .toBe("24px")
+  await expect.poll(() => activity.evaluate((element) => getComputedStyle(element).paddingInlineStart)).toBe("24px")
 })
 
 async function setup(
   page: Page,
   input: {
     agentRun: (sessionID: string) => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
+    agentRunOverview?: () => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
+    sessions?: ({ id: string } & Record<string, unknown>)[]
     newLayoutDesigns?: boolean
   },
 ) {
@@ -315,9 +413,11 @@ async function setup(
         cost: 1.25,
         tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 10, write: 2 } },
       }),
+      ...(input.sessions ?? []),
     ],
     pageMessages: () => ({ items: [] }),
     agentRun: input.agentRun,
+    agentRunOverview: input.agentRunOverview ?? (() => input.agentRun(rootID)),
   })
   await page.route(
     (url) => ["/api/provider", "/api/model", "/api/model/default"].includes(url.pathname),
@@ -379,6 +479,29 @@ function snapshot(sessionID = rootID, info = run({ state: { type: "running" }, v
   }
 }
 
+function overview(...active: ReturnType<typeof run>[]) {
+  return {
+    nodes: [
+      {
+        sessionID: childID,
+        parentSessionID: rootID,
+        title: childTitle,
+        agent: "build",
+        createdAt: 1_700_000_001_000,
+      },
+      {
+        sessionID: otherChildID,
+        parentSessionID: otherRootID,
+        title: otherChildTitle,
+        agent: "build",
+        createdAt: 1_700_000_004_000,
+      },
+    ],
+    active,
+    history: [],
+  }
+}
+
 function snapshotWithUnknown(sessionID = rootID) {
   const current = snapshot(sessionID)
   return {
@@ -405,14 +528,21 @@ function unknownRun() {
   }
 }
 
-function run(input: { state: Record<string, unknown>; version: number }) {
+function run(input: {
+  state: Record<string, unknown>
+  version: number
+  id?: string
+  sessionID?: string
+  callerSessionID?: string
+  description?: string
+}) {
   return {
-    id: "arun_agents_child",
-    sessionID: childID,
-    callerSessionID: rootID,
+    id: input.id ?? "arun_agents_child",
+    sessionID: input.sessionID ?? childID,
+    callerSessionID: input.callerSessionID ?? rootID,
     source: { messageID: "msg_agents_child", callID: "call_agents_child" },
     agent: "build",
-    description: "Inspect the final app integration",
+    description: input.description ?? "Inspect the final app integration",
     model: { providerID: "opencode", id: "test" },
     background: true,
     state: input.state,

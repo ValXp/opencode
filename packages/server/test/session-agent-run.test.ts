@@ -27,8 +27,13 @@ import { SessionLocationMiddleware, sessionLocationLayer } from "../src/middlewa
 const rootSessionID = SessionV2.ID.make("ses_agent_run_handler_root")
 const childSessionID = SessionV2.ID.make("ses_agent_run_handler_child")
 const grandchildSessionID = SessionV2.ID.make("ses_agent_run_handler_grandchild")
+const secondRootSessionID = SessionV2.ID.make("ses_agent_run_handler_second_root")
+const secondChildSessionID = SessionV2.ID.make("ses_agent_run_handler_second_child")
 const missingSessionID = SessionV2.ID.make("ses_agent_run_handler_missing")
-const fixture: { expected?: typeof AgentRun.Snapshot.Encoded } = {}
+const fixture: {
+  snapshot?: typeof AgentRun.Snapshot.Encoded
+  overview?: typeof AgentRun.Overview.Encoded
+} = {}
 
 const services = AppNodeBuilder.build(
   LayerNode.group([Database.node, AgentRun.node, SessionV2.node, LocationServiceMap.node]),
@@ -84,6 +89,28 @@ const seed = Layer.effectDiscard(
           time_created: 3,
           time_updated: 3,
         },
+        {
+          id: secondRootSessionID,
+          project_id: ProjectV2.ID.global,
+          slug: "second-root",
+          directory: "/tmp",
+          title: "Second root",
+          version: "test",
+          time_created: 4,
+          time_updated: 4,
+        },
+        {
+          id: secondChildSessionID,
+          project_id: ProjectV2.ID.global,
+          parent_id: secondRootSessionID,
+          slug: "second-child",
+          directory: "/tmp",
+          title: "Second child",
+          agent: "review",
+          version: "test",
+          time_created: 5,
+          time_updated: 5,
+        },
       ])
       .run()
       .pipe(Effect.orDie)
@@ -107,7 +134,17 @@ const seed = Layer.effectDiscard(
       ownerID: "test-process",
     })
     yield* runs.transition({ id: terminal.info.id, ownerID: "test-process", state: { type: "succeeded" } })
-    fixture.expected = Schema.encodeSync(AgentRun.Snapshot)(yield* runs.snapshot(rootSessionID))
+    yield* runs.admit({
+      sessionID: secondChildSessionID,
+      callerSessionID: secondRootSessionID,
+      source: { messageID: SessionMessage.ID.make("msg_agent_run_handler_second_active"), callID: "second-active" },
+      agent: AgentV2.ID.make("review"),
+      description: "Review another session tree",
+      background: true,
+      ownerID: "test-process",
+    })
+    fixture.snapshot = Schema.encodeSync(AgentRun.Snapshot)(yield* runs.snapshot(rootSessionID))
+    fixture.overview = Schema.encodeSync(AgentRun.Overview)(yield* runs.overview())
   }),
 )
 
@@ -134,8 +171,8 @@ test("serves the canonical recursive agent-run snapshot and rejects an unknown s
 
   expect(response.status).toBe(200)
   const body = Schema.decodeUnknownSync(AgentRun.Snapshot)(await response.json())
-  if (fixture.expected === undefined) throw new Error("Agent-run fixture was not seeded")
-  expect(Schema.encodeSync(AgentRun.Snapshot)(body)).toEqual(fixture.expected)
+  if (fixture.snapshot === undefined) throw new Error("Agent-run fixture was not seeded")
+  expect(Schema.encodeSync(AgentRun.Snapshot)(body)).toEqual(fixture.snapshot)
   expect(body.nodes.map((node) => node.sessionID)).toEqual([childSessionID, grandchildSessionID])
   expect(body.active.map((run) => run.sessionID)).toEqual([childSessionID])
   expect(body.history.map((run) => run.sessionID)).toEqual([grandchildSessionID])
@@ -145,4 +182,16 @@ test("serves the canonical recursive agent-run snapshot and rejects an unknown s
     sessionID: missingSessionID,
     message: `Session not found: ${missingSessionID}`,
   })
+})
+
+test("serves the server-wide agent-run overview across session roots", async () => {
+  const response = await app.handler(new Request("http://localhost/api/agent-run"))
+
+  expect(response.status).toBe(200)
+  const body = Schema.decodeUnknownSync(AgentRun.Overview)(await response.json())
+  if (fixture.overview === undefined) throw new Error("Agent-run overview fixture was not seeded")
+  expect(Schema.encodeSync(AgentRun.Overview)(body)).toEqual(fixture.overview)
+  expect(body.nodes.map((node) => node.sessionID)).toEqual([childSessionID, grandchildSessionID, secondChildSessionID])
+  expect(new Set(body.active.map((run) => run.sessionID))).toEqual(new Set([childSessionID, secondChildSessionID]))
+  expect(body.history.map((run) => run.sessionID)).toEqual([grandchildSessionID])
 })

@@ -53,3 +53,27 @@ test("defines the session agent-run snapshot contract", () => {
   expect(decodeSuccess(snapshot)).toEqual(snapshot)
   expect(() => decodeSuccess({ data: snapshot })).toThrow()
 })
+
+test("defines the server-wide agent-run overview without session-location middleware", () => {
+  const endpoint = SessionGroup.endpoints["session.agentRunOverview"]
+
+  expect(Api.groups["server.session"].endpoints["session.agentRunOverview"]).toBeDefined()
+  expect(endpoint.method).toBe("GET")
+  expect(endpoint.path).toBe("/api/agent-run")
+  expect([...endpoint.middlewares].map((middleware) => middleware.key)).not.toContain(SessionLocationMiddleware.key)
+  expect(endpoint.params).toBeUndefined()
+
+  const overview = {
+    nodes: [],
+    active: [],
+    history: [],
+  }
+  expect(endpoint.success.size).toBe(1)
+  const success = [...endpoint.success][0]
+  expect(success).toBeDefined()
+  if (success === undefined) throw new Error("Expected agent-run overview success schema")
+  expect(SchemaAST.resolveIdentifier(success.ast)).toBe(SchemaAST.resolveIdentifier(AgentRun.Overview.ast))
+  const decodeSuccess = Schema.decodeUnknownSync(Schema.make<Schema.Codec<unknown, unknown>>(success.ast))
+  expect(decodeSuccess(overview)).toEqual(overview)
+  expect(() => decodeSuccess({ data: overview })).toThrow()
+})

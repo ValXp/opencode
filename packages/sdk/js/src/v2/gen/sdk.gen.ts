@@ -336,6 +336,8 @@ import type {
   V2SessionActiveErrors,
   V2SessionActiveResponses,
   V2SessionAgentRunErrors,
+  V2SessionAgentRunOverviewErrors,
+  V2SessionAgentRunOverviewResponses,
   V2SessionAgentRunResponses,
   V2SessionCompactErrors,
   V2SessionCompactResponses,
@@ -5517,6 +5519,19 @@ export class Session3 extends HeyApiClient {
       url: "/api/session/active",
       ...options,
     })
+  }
+
+  /**
+   * List agent runs
+   *
+   * Retrieve active agent runs and recent terminal history across all sessions.
+   */
+  public agentRunOverview<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2SessionAgentRunOverviewResponses,
+      V2SessionAgentRunOverviewErrors,
+      ThrowOnError
+    >({ url: "/api/agent-run", ...options })
   }
 
   /**

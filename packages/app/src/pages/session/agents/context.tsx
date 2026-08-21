@@ -1,21 +1,12 @@
 import { AgentRun } from "@opencode-ai/schema"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { useParams } from "@solidjs/router"
-import { createQuery, type QueryClient, skipToken } from "@tanstack/solid-query"
+import { createQuery, type QueryClient } from "@tanstack/solid-query"
 import { batch, createEffect, createMemo, on, onCleanup, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
-import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
-import { useSync } from "@/context/sync"
 import { projectAgents, type AgentsProjection, upsertAgentRun } from "./model"
-import {
-  decodeAgentRunEvent,
-  deriveRootSessionID,
-  fetchAgentRunSnapshot,
-  isServerConnectedEvent,
-  serverConnectedEventID,
-} from "./source"
+import { decodeAgentRunEvent, fetchAgentRunOverview, isServerConnectedEvent, serverConnectedEventID } from "./source"
 
 const emptyProjection: AgentsProjection = {
   rows: [],
@@ -31,33 +22,27 @@ type AgentsEvents = {
 }
 type FreshnessTimer = number | ReturnType<typeof window.setInterval>
 type JournalEntry = { sequence: number; info: AgentRun.Info }
-type SnapshotResult = {
-  rootSessionID: string
-  snapshot: AgentRun.Snapshot
+type OverviewResult = {
+  serverKey: string
+  overview: AgentRun.Overview
   baseline: number
   token: object
 }
 
-function isEventSource(input: AgentsEvents | readonly AgentsEvents[]): input is AgentsEvents {
-  return "listen" in input
-}
-
 export function createAgentsContext(input: {
-  sessionID: () => string | undefined
-  getSession: (sessionID: string) => { id: string; parentID?: string } | undefined
   queryKey: () => string
   queryClient?: QueryClient
-  fetchSnapshot: (rootSessionID: string, signal?: AbortSignal) => Promise<AgentRun.Snapshot>
-  events: AgentsEvents | readonly AgentsEvents[]
+  fetchOverview: (signal?: AbortSignal) => Promise<AgentRun.Overview>
+  events: AgentsEvents
   initialConnectionID?: string
   now?: () => number
   setInterval?: (callback: () => void, ms: number) => FreshnessTimer
   clearInterval?: (timer: FreshnessTimer) => void
 }) {
-  const rootSessionID = createMemo(() => deriveRootSessionID(input.sessionID(), input.getSession))
+  const serverKey = createMemo(input.queryKey)
   const now = input.now ?? Date.now
   const [store, setStore] = createStore<{
-    snapshot?: AgentRun.Snapshot
+    overview?: AgentRun.Overview
     error?: unknown
     lastSuccessAt?: number
     now: number
@@ -69,29 +54,26 @@ export function createAgentsContext(input: {
   let eventSequence = 0
   let evictedEventSequence = 0
   let attemptedEvictedEventSequence = 0
-  let repair: { rootSessionID: string; token: object } | undefined
+  let repair: { serverKey: string; token: object } | undefined
   let committedToken: object | undefined
   const runEvents = new Map<AgentRun.ID, JournalEntry>()
   const repairAttemptVersions = new Map<AgentRun.ID, number>()
   const queryClient = input.queryClient
   const query = createQuery(
     () => {
-      const root = rootSessionID()
+      const key = serverKey()
       return {
-        queryKey: ["session-agents", input.queryKey(), root] as const,
-        enabled: root !== undefined,
-        queryFn: root
-          ? async ({ signal }: { signal: AbortSignal }): Promise<SnapshotResult> => {
-              const baseline = eventSequence
-              markRepairAttempts(baseline)
-              return {
-                rootSessionID: root,
-                snapshot: await input.fetchSnapshot(root, signal),
-                baseline,
-                token: {},
-              }
-            }
-          : skipToken,
+        queryKey: ["agents", key] as const,
+        queryFn: async ({ signal }: { signal: AbortSignal }): Promise<OverviewResult> => {
+          const baseline = eventSequence
+          markRepairAttempts(baseline)
+          return {
+            serverKey: key,
+            overview: await input.fetchOverview(signal),
+            baseline,
+            token: {},
+          }
+        },
         retry: false,
         refetchInterval: false,
         refetchOnMount: true,
@@ -110,7 +92,7 @@ export function createAgentsContext(input: {
     timer = undefined
   }
   createEffect(() => {
-    if (!store.snapshot?.active.length) {
+    if (!store.overview?.active.length) {
       stopTimer()
       return
     }
@@ -120,7 +102,6 @@ export function createAgentsContext(input: {
   })
   onCleanup(stopTimer)
   const refresh = async () => {
-    if (!rootSessionID()) return
     await query.refetch({ cancelRefetch: false })
   }
 
@@ -140,39 +121,20 @@ export function createAgentsContext(input: {
     return true
   }
 
-  function knownSession(snapshot: AgentRun.Snapshot, info: AgentRun.Info) {
-    return info.sessionID === snapshot.rootSessionID || snapshot.nodes.some((node) => node.sessionID === info.sessionID)
+  function knownSession(overview: AgentRun.Overview, info: AgentRun.Info) {
+    return overview.nodes.some((node) => node.sessionID === info.sessionID)
   }
 
-  function relatedRunIDs(snapshot: AgentRun.Snapshot) {
-    const sessions = new Set([snapshot.rootSessionID, ...snapshot.nodes.map((node) => node.sessionID)])
-    const relevant = new Set<AgentRun.ID>()
-    const entries = [...runEvents.values()]
-    while (true) {
-      const discovered = entries.filter(
-        (entry) =>
-          !relevant.has(entry.info.id) &&
-          (sessions.has(entry.info.sessionID) || sessions.has(entry.info.callerSessionID)),
-      )
-      if (!discovered.length) return relevant
-      discovered.forEach((entry) => {
-        relevant.add(entry.info.id)
-        sessions.add(entry.info.sessionID)
-      })
-    }
-  }
-
-  function unresolvedRunEvents(snapshot: AgentRun.Snapshot) {
-    const relevant = relatedRunIDs(snapshot)
-    return [...runEvents.values()].filter((entry) => relevant.has(entry.info.id) && !knownSession(snapshot, entry.info))
+  function unresolvedRunEvents(overview: AgentRun.Overview) {
+    return [...runEvents.values()].filter((entry) => !knownSession(overview, entry.info))
   }
 
   function markRepairAttempts(baseline: number) {
-    if (!store.snapshot) return
+    if (!store.overview) return
     if (evictedEventSequence <= baseline) {
       attemptedEvictedEventSequence = Math.max(attemptedEvictedEventSequence, evictedEventSequence)
     }
-    unresolvedRunEvents(store.snapshot).forEach((entry) => {
+    unresolvedRunEvents(store.overview).forEach((entry) => {
       if (entry.sequence > baseline) return
       repairAttemptVersions.set(
         entry.info.id,
@@ -182,18 +144,18 @@ export function createAgentsContext(input: {
   }
 
   function ensureRepair() {
-    const root = rootSessionID()
-    if (!root || !store.snapshot) return
-    const unresolved = unresolvedRunEvents(store.snapshot)
+    if (!store.overview) return
+    const key = serverKey()
+    const unresolved = unresolvedRunEvents(store.overview)
     if (!unresolved.length && evictedEventSequence === 0) return
     setStore("partial", true)
-    if (repair?.rootSessionID === root) return
+    if (repair?.serverKey === key) return
     const needsRunRepair = unresolved.some(
       (entry) => (repairAttemptVersions.get(entry.info.id) ?? -1) < entry.info.version,
     )
     if (!needsRunRepair && attemptedEvictedEventSequence >= evictedEventSequence) return
     const token = {}
-    repair = { rootSessionID: root, token }
+    repair = { serverKey: key, token }
     void query
       .refetch({ cancelRefetch: false })
       .catch(() => {})
@@ -204,70 +166,60 @@ export function createAgentsContext(input: {
       })
   }
 
-  function applySnapshot(result: SnapshotResult) {
+  function applyOverview(result: OverviewResult) {
     if (evictedEventSequence <= result.baseline) {
       evictedEventSequence = 0
       attemptedEvictedEventSequence = 0
     }
-    const relevant = relatedRunIDs(result.snapshot)
-    const next = [...runEvents.values()].reduce((snapshot, entry) => {
-      if (!relevant.has(entry.info.id)) {
-        runEvents.delete(entry.info.id)
-        repairAttemptVersions.delete(entry.info.id)
-        return snapshot
-      }
-      if (!knownSession(snapshot, entry.info)) return snapshot
+    const next = [...runEvents.values()].reduce((overview, entry) => {
+      if (!knownSession(overview, entry.info)) return overview
       repairAttemptVersions.delete(entry.info.id)
       if (entry.sequence <= result.baseline && runEvents.get(entry.info.id) === entry) runEvents.delete(entry.info.id)
-      return upsertAgentRun(snapshot, entry.info)
-    }, result.snapshot)
+      return upsertAgentRun(overview, entry.info)
+    }, result.overview)
     const partial = evictedEventSequence > 0 || unresolvedRunEvents(next).length > 0
-    setStore({ snapshot: next, error: undefined, lastSuccessAt: now(), partial })
+    setStore({ overview: next, error: undefined, lastSuccessAt: now(), partial })
     if (partial) ensureRepair()
   }
 
   function applyRunEvent(info: AgentRun.Info) {
-    if (!recordRunEvent(info) || !store.snapshot) return
-    if (!relatedRunIDs(store.snapshot).has(info.id)) return
-    if (!knownSession(store.snapshot, info)) {
+    if (!recordRunEvent(info) || !store.overview) return
+    if (!knownSession(store.overview, info)) {
       setStore("partial", true)
       ensureRepair()
       return
     }
     repairAttemptVersions.delete(info.id)
-    const next = upsertAgentRun(store.snapshot, info)
-    if (next === store.snapshot) return
-    setStore("snapshot", next)
+    const next = upsertAgentRun(store.overview, info)
+    if (next === store.overview) return
+    setStore("overview", next)
   }
   let connectionObserved = input.initialConnectionID !== undefined
   let connectionID = input.initialConnectionID
-  const eventSources = isEventSource(input.events) ? [input.events] : input.events
-  const stops = eventSources.map((events) =>
-    events.listen((event) => {
-      if (isServerConnectedEvent(event)) {
-        const nextConnectionID = serverConnectedEventID(event)
-        if (!connectionObserved || nextConnectionID === connectionID) {
-          connectionObserved = true
-          connectionID = nextConnectionID
-          return
-        }
+  const stop = input.events.listen((event) => {
+    if (isServerConnectedEvent(event)) {
+      const nextConnectionID = serverConnectedEventID(event)
+      if (!connectionObserved || nextConnectionID === connectionID) {
+        connectionObserved = true
         connectionID = nextConnectionID
-        void refresh()
         return
       }
-      const info = decodeAgentRunEvent(event)
-      if (!info) return
-      applyRunEvent(info)
-    }),
-  )
-  onCleanup(() => stops.forEach((stop) => stop()))
+      connectionID = nextConnectionID
+      void refresh()
+      return
+    }
+    const info = decodeAgentRunEvent(event)
+    if (!info) return
+    applyRunEvent(info)
+  })
+  onCleanup(stop)
 
   createEffect(
     on(
-      rootSessionID,
+      serverKey,
       () => {
         batch(() => {
-          setStore("snapshot", undefined)
+          setStore("overview", undefined)
           setStore("error", undefined)
           setStore("lastSuccessAt", undefined)
           setStore("showHistory", false)
@@ -288,11 +240,11 @@ export function createAgentsContext(input: {
   )
 
   createEffect(() => {
-    const root = rootSessionID()
+    const key = serverKey()
     const result = query.data
-    if (!root || !result || result.rootSessionID !== root || committedToken === result.token) return
+    if (!result || result.serverKey !== key || committedToken === result.token) return
     committedToken = result.token
-    untrack(() => applySnapshot(result))
+    untrack(() => applyOverview(result))
   })
 
   createEffect(() => {
@@ -301,19 +253,18 @@ export function createAgentsContext(input: {
   })
 
   const projection = createMemo(() => {
-    if (!store.snapshot) return emptyProjection
-    return projectAgents(store.snapshot, { now: store.now, showHistory: store.showHistory })
+    if (!store.overview) return emptyProjection
+    return projectAgents(store.overview, { now: store.now, showHistory: store.showHistory })
   })
-  const stale = createMemo(() => store.snapshot !== undefined && store.error !== undefined)
+  const stale = createMemo(() => store.overview !== undefined && store.error !== undefined)
   const warning = createMemo(() => {
     if (!stale() && !store.partial) return undefined
     return { stale: stale(), partial: store.partial }
   })
   return {
-    rootSessionID,
     projection,
-    snapshot: () => store.snapshot,
-    loading: () => rootSessionID() !== undefined && query.isFetching,
+    overview: () => store.overview,
+    loading: () => query.isFetching,
     error: () => store.error,
     lastSuccessAt: () => store.lastSuccessAt,
     stale,
@@ -336,36 +287,23 @@ export function createAgentsContext(input: {
 const agentsContext = createSimpleContext({
   name: "Agents",
   init: () => {
-    const params = useParams<{ id?: string }>()
     const platform = usePlatform()
-    const sdk = useSDK()
     const serverSDK = useServerSDK()
-    const sync = useSync()
 
     return createAgentsContext({
-      sessionID: () => params.id,
-      getSession: (sessionID) => sync().session.get(sessionID),
-      queryKey: () => `${serverSDK().scope}\0${sdk().directory}`,
-      fetchSnapshot: (rootSessionID, signal) =>
-        fetchAgentRunSnapshot({
+      queryKey: () => serverSDK().scope,
+      fetchOverview: (signal) =>
+        fetchAgentRunOverview({
           server: serverSDK().server.http,
           fetch: platform.fetch ?? fetch,
-          rootSessionID,
           signal,
         }),
       initialConnectionID: serverSDK().event.connectionID,
-      events: [
-        {
-          listen(listener) {
-            return sdk().event.listen((event) => listener(event.details))
-          },
+      events: {
+        listen(listener) {
+          return serverSDK().event.listen((event) => listener(event.details))
         },
-        {
-          listen(listener) {
-            return serverSDK().event.on("global", listener)
-          },
-        },
-      ],
+      },
     })
   },
 })

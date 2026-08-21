@@ -10248,6 +10248,54 @@
         ]
       }
     },
+    "/api/agent-run": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.agentRunOverview",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "AgentRun.Overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunOverview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve active agent runs and recent terminal history across all sessions.",
+        "summary": "List agent runs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.v2.session.agentRunOverview({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}": {
       "get": {
         "tags": ["sessions"],
@@ -27657,6 +27705,31 @@
           }
         },
         "required": ["sessionID", "parentSessionID", "title", "createdAt"],
+        "additionalProperties": false
+      },
+      "AgentRunOverview": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunNode"
+            }
+          },
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunInfo"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunInfo"
+            }
+          }
+        },
+        "required": ["nodes", "active", "history"],
         "additionalProperties": false
       },
       "AgentRunSnapshot": {
