@@ -112,7 +112,7 @@ Open the permanent **Agents** tab in the existing right workspace to monitor del
 
 The panel always includes that tree's active runs and shows its 10 most recent terminal child sessions by default. Choose **Show history** to reveal older terminal sessions for that tree. Expand a row to inspect its details, or choose **Open session** to navigate to its child session.
 
-Each row can show an activity summary and, separately, **No activity for N** freshness. A long freshness interval does not establish that a run is stalled; the [AgentRun status](/docs/agents#statuses) remains authoritative. Summaries are local by default; model-generated summaries require explicit opt-in and can use model tokens and incur provider costs.
+Each row can show an activity summary and, separately, **No activity for N** freshness, automatically scaled to seconds, minutes, or hours. When an active child session has a pending permission request, the panel shows **Awaiting permission** instead of the inactivity warning until the request clears. A long freshness interval does not establish that a run is stalled; the [AgentRun status](/docs/agents#statuses) remains authoritative. Summaries are local by default; model-generated summaries require explicit opt-in and can use model tokens and incur provider costs.
 
 On mobile, the global active-count badge opens the currently viewed session tree's Agents panel in a right-side drawer.
 

@@ -109,6 +109,29 @@ test("shows the active agent count in the persistent header while the workspace 
   await expect(page.locator("#review-panel")).toHaveCount(0)
 })
 
+test("shows an active child agent as awaiting its pending permission", async ({ page }) => {
+  await setup(page, {
+    agentRun: (sessionID) => ({ body: snapshot(sessionID) }),
+    permissions: [
+      {
+        id: "per_agents_child",
+        sessionID: childID,
+        action: "read",
+        resources: ["/root/secret"],
+        save: [],
+      },
+    ],
+  })
+
+  await page.goto(sessionHref(rootID), { waitUntil: "domcontentloaded" })
+  await expect(page.getByRole("heading", { name: rootTitle })).toBeVisible({ timeout: 60_000 })
+  await page.locator('[data-slot="session-agents-header-trigger"]').click()
+
+  const row = page.getByRole("listitem").filter({ hasText: childTitle })
+  await expect(row).toContainText("Awaiting permission")
+  await expect(row).not.toContainText("No activity")
+})
+
 test("recovers the global indicator after an overview failure while the session snapshot remains available", async ({
   page,
 }) => {
@@ -488,6 +511,7 @@ async function setup(
     agentRun: (sessionID: string) => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
     agentRunOverview?: () => { body: unknown; status?: number } | Promise<{ body: unknown; status?: number }>
     sessions?: ({ id: string } & Record<string, unknown>)[]
+    permissions?: unknown[]
     newLayoutDesigns?: boolean
   },
 ) {
@@ -523,6 +547,7 @@ async function setup(
       ...(input.sessions ?? []),
     ],
     pageMessages: () => ({ items: [] }),
+    permissions: input.permissions,
     agentRun: input.agentRun,
     agentRunOverview: input.agentRunOverview ?? (() => input.agentRun(rootID)),
   })

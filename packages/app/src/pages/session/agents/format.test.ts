@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Agent, AgentRun, Session, SessionMessage } from "@opencode-ai/schema"
 import { DateTime } from "effect"
-import { formatElapsed } from "./format"
+import { formatDuration, formatElapsed } from "./format"
 
 function run(input: {
   state?: AgentRun.State
@@ -57,5 +57,18 @@ describe("formatElapsed", () => {
 
   test("localizes digits and units", () => {
     expect(formatElapsed(run({}), 61_000, "ar")).toBe("١ د و١ ث")
+  })
+})
+
+describe("formatDuration", () => {
+  test.each([
+    [59, "59s"],
+    [60, "1m"],
+    [61, "1m 1s"],
+    [3_599, "59m 59s"],
+    [3_600, "1h"],
+    [3_660, "1h 1m"],
+  ])("scales %i seconds to compact English units", (seconds, expected) => {
+    expect(formatDuration(seconds, "en")).toBe(expected)
   })
 })

@@ -16,6 +16,7 @@ export interface AgentsPanelProps {
   expanded?: (sessionID: AgentSessionID) => boolean
   onExpandedChange?: (sessionID: AgentSessionID, expanded: boolean) => void
   usage?: (sessionID: AgentSessionID) => AgentSessionUsage | undefined
+  awaitingPermission?: (sessionID: AgentSessionID) => boolean
   onHistoryVisibleChange: (visible: boolean) => void
   onOpenSession: (sessionID: AgentSessionID) => void
   class?: string
@@ -60,6 +61,7 @@ export function AgentsPanel(props: AgentsPanelProps) {
                 expanded={props.expanded?.(row.node.sessionID)}
                 onExpandedChange={(expanded) => props.onExpandedChange?.(row.node.sessionID, expanded)}
                 usage={props.usage?.(row.node.sessionID)}
+                awaitingPermission={props.awaitingPermission?.(row.node.sessionID)}
                 onOpenSession={props.onOpenSession}
               />
             )}

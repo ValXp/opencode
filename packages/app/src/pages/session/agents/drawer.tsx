@@ -129,6 +129,7 @@ export function SessionAgentsPanel(props: { class?: string }) {
             if (!session) return undefined
             return { cost: session.cost, tokens: session.tokens }
           }}
+          awaitingPermission={(sessionID) => (sync().data.permission[sessionID]?.length ?? 0) > 0}
           onHistoryVisibleChange={session.setShowHistory}
           onOpenSession={(sessionID) => {
             agents.setMobileDrawerOpen(false)

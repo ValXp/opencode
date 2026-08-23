@@ -4,7 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
-import { formatElapsed, formatTimestamp, timestampISOString, type AgentSessionUsage } from "./format"
+import { formatDuration, formatElapsed, formatTimestamp, timestampISOString, type AgentSessionUsage } from "./format"
 import type { AgentRow } from "./model"
 
 export interface AgentRunRowProps {
@@ -13,6 +13,7 @@ export interface AgentRunRowProps {
   expanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
   usage?: AgentSessionUsage
+  awaitingPermission?: boolean
   onOpenSession: (sessionID: AgentRow["node"]["sessionID"]) => void
 }
 
@@ -20,10 +21,12 @@ export function AgentRunRow(props: AgentRunRowProps) {
   const language = useLanguage()
   const [store, setStore] = createStore({ now: Date.now(), expanded: false })
   const active = () => props.row.state?.type === "running" || props.row.state?.type === "retrying"
+  const awaitingPermission = () => active() && props.awaitingPermission === true
   const now = () => props.now?.() ?? store.now
-  const ageSeconds = () => Math.floor((props.row.freshness?.ageMs ?? 0) / 1_000)
-  const inactive = () => props.row.freshness?.inactive ?? false
+  const inactiveDuration = () => formatDuration((props.row.freshness?.ageMs ?? 0) / 1_000, language.intl())
+  const inactive = () => !awaitingPermission() && (props.row.freshness?.inactive ?? false)
   const statusLabel = () => {
+    if (awaitingPermission()) return language.t("session.agents.status.awaitingPermission")
     switch (props.row.state?.type) {
       case "running":
         return language.t("session.agents.status.running")
@@ -169,7 +172,7 @@ export function AgentRunRow(props: AgentRunRowProps) {
               <span data-slot="agent-activity-text" dir="auto">
                 {inactive()
                   ? language.t("session.agents.activity.inactive", {
-                      seconds: ageSeconds(),
+                      duration: inactiveDuration(),
                       summary: props.row.current?.activity.summary ?? statusLabel(),
                     })
                   : props.row.current?.activity.summary}

@@ -140,6 +140,7 @@ function mount(
           tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
         }
       | undefined
+    awaitingPermission?: (sessionID: AgentRow["node"]["sessionID"]) => boolean
     onHistoryVisibleChange?: (visible: boolean) => void
     onOpenSession?: (sessionID: AgentRow["node"]["sessionID"]) => void
   },
@@ -160,6 +161,7 @@ function mount(
               expanded={options?.expanded}
               onExpandedChange={options?.onExpandedChange}
               usage={options?.usage}
+              awaitingPermission={options?.awaitingPermission}
               onOpenSession={options?.onOpenSession ?? (() => {})}
               onHistoryVisibleChange={options?.onHistoryVisibleChange ?? (() => {})}
             />
@@ -249,6 +251,54 @@ describe.skipIf(isServer)("AgentsPanel", () => {
     })
   })
 
+  test("shows matching active agents as awaiting permission instead of inactive", () => {
+    const waiting = makeRow({
+      sessionID: "ses_waiting",
+      title: "Waiting worker",
+      state: { type: "running" },
+      summary: "Reading secrets",
+      at: 0,
+      started: 1,
+    })
+    const sibling = makeRow({
+      sessionID: "ses_sibling",
+      title: "Sibling worker",
+      state: { type: "running" },
+      summary: "Running tests",
+      at: 0,
+      started: 1,
+    })
+    const finished = makeRow({
+      sessionID: "ses_finished",
+      title: "Finished worker",
+      state: { type: "succeeded" },
+    })
+    const snapshot = AgentRun.Snapshot.make({
+      rootSessionID: rootID,
+      nodes: [waiting.node, sibling.node, finished.node],
+      active: [waiting.current!, sibling.current!],
+      history: [finished.current!],
+    })
+    const [pending, setPending] = createSignal(new Set(["ses_waiting", "ses_finished", String(rootID)]))
+    const host = mount(projectAgents(snapshot, { now: 120_000, showHistory: true }), {
+      awaitingPermission: (sessionID) => pending().has(String(sessionID)),
+    })
+    const waitingRow = findRow(host, "Waiting worker")
+
+    expect(waitingRow.textContent).toContain("Awaiting permission")
+    expect(waitingRow.textContent).not.toContain("No activity")
+    expect(waitingRow.querySelector('[data-slot="agent-status-live"]')?.textContent).toBe("Awaiting permission")
+    expect(findRow(host, "Sibling worker").textContent).toContain("No activity for 1m 59s")
+    expect(findRow(host, "Finished worker").textContent).toContain("Succeeded")
+    expect(findRow(host, "Finished worker").textContent).not.toContain("Awaiting permission")
+
+    setPending(new Set<string>())
+
+    expect(waitingRow.textContent).toContain("Running")
+    expect(waitingRow.textContent).toContain("No activity for 1m 59s")
+    expect(waitingRow.querySelector('[data-slot="agent-status-live"]')?.textContent).toBe("Running")
+  })
+
   test("switches the semantic activity line at the 60 second inactivity boundary", () => {
     const [now, setNow] = createSignal(59_999)
     const base = makeRow({
@@ -277,13 +327,17 @@ describe.skipIf(isServer)("AgentsPanel", () => {
 
     setNow(60_001)
     setProjection(projectAgents(snapshot, { now: 60_001 }))
-    expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 60s · Last: Indexing symbols")
+    expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 1m · Last: Indexing symbols")
     expect(row.querySelector('[data-slot="agent-activity-live"]')?.textContent).toBe("Indexing symbols")
 
     setNow(61_001)
     setProjection(projectAgents(snapshot, { now: 61_001 }))
-    expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 61s · Last: Indexing symbols")
+    expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 1m 1s · Last: Indexing symbols")
     expect(row.querySelector('[data-slot="agent-activity-live"]')?.textContent).toBe("Indexing symbols")
+
+    setNow(3_600_001)
+    setProjection(projectAgents(snapshot, { now: 3_600_001 }))
+    expect(findRow(host, "Quiet worker").textContent).toContain("No activity for 1h · Last: Indexing symbols")
   })
 
   test("does not mark queued runs inactive and ages newly started runs from their start", () => {
@@ -314,7 +368,7 @@ describe.skipIf(isServer)("AgentsPanel", () => {
     expect(findRow(host, "Queued worker").textContent).not.toContain("No activity")
 
     setNow(360_000)
-    expect(findRow(host, "Queued worker").textContent).toContain("No activity for 60s · Last: Waiting to start")
+    expect(findRow(host, "Queued worker").textContent).toContain("No activity for 1m · Last: Waiting to start")
   })
 
   test("expands and collapses by click and opens the child session explicitly", () => {
