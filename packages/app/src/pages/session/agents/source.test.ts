@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
-import { decodeAgentRunEvent, fetchAgentRunOverview } from "./source"
+import { decodeAgentRunEvent, fetchAgentRunOverview, fetchAgentRunSnapshot } from "./source"
 
 const encoded = {
   nodes: [
@@ -114,4 +114,30 @@ describe("agent run source", () => {
     expect("rootSessionID" in result).toBeFalse()
     expect(DateTime.toEpochMillis(result.active[0].activity.at)).toBe(2_000)
   })
+
+  test("loads and decodes the session-scoped agent-run snapshot with target-server auth", async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    async function fetchSnapshot(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      expect(this).toBeUndefined()
+      requests.push({ input, init })
+      return Response.json({ rootSessionID: "ses_root", ...encoded })
+    }
+
+    const result = await fetchAgentRunSnapshot({
+      server: { url: "https://target.example/base", username: "agent", password: "secret" },
+      fetch: fetchSnapshot,
+      rootSessionID: "ses_root/encoded",
+    })
+
+    const request = requests[0]?.input
+    expect(request instanceof Request ? request.url : String(request)).toBe(
+      "https://target.example/api/session/ses_root%2Fencoded/agent-run",
+    )
+    expect(requests[0]?.init?.method).toBe("GET")
+    expect(new Headers(requests[0]?.init?.headers).get("authorization")).toBe(`Basic ${btoa("agent:secret")}`)
+    expect(new Headers(requests[0]?.init?.headers).has("x-opencode-directory")).toBeFalse()
+    expect(String(result.rootSessionID)).toBe("ses_root")
+    expect(DateTime.toEpochMillis(result.active[0].activity.at)).toBe(2_000)
+  })
+
 })

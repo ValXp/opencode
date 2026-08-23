@@ -108,13 +108,13 @@ While enabled, the web interface removes animations, smooth scrolling, visual fi
 
 ### Agents
 
-Open the permanent **Agents** tab in the existing right workspace to monitor delegated work across every session on the connected server. Its badge shows the number of active agent sessions across all session trees.
+Open the permanent **Agents** tab in the existing right workspace to monitor delegated work for the currently viewed session tree. The top-right badge shows the number of active agent sessions across all session trees on the connected server.
 
-The panel always includes active runs and shows the 10 most recent terminal child sessions by default. Choose **Show history** to reveal older terminal sessions from the server. Expand a row to inspect its details, or choose **Open session** to navigate to its child session.
+The panel always includes that tree's active runs and shows its 10 most recent terminal child sessions by default. Choose **Show history** to reveal older terminal sessions for that tree. Expand a row to inspect its details, or choose **Open session** to navigate to its child session.
 
 Each row can show an activity summary and, separately, **No activity for N** freshness. A long freshness interval does not establish that a run is stalled; the [AgentRun status](/docs/agents#statuses) remains authoritative. Summaries are local by default; model-generated summaries require explicit opt-in and can use model tokens and incur provider costs.
 
-On mobile, the active-count badge opens the Agents panel in a right-side drawer.
+On mobile, the global active-count badge opens the currently viewed session tree's Agents panel in a right-side drawer.
 
 ### Server Status
 

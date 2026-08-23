@@ -64,6 +64,7 @@ export function SessionAgentsDrawer() {
 
 export function SessionAgentsPanel(props: { class?: string }) {
   const agents = useAgents()
+  const session = agents.session
   const language = useLanguage()
   const navigate = useNavigate()
   const params = useParams<{ serverKey?: string }>()
@@ -71,7 +72,7 @@ export function SessionAgentsPanel(props: { class?: string }) {
   const sync = useSync()
 
   createEffect(() => {
-    const overview = agents.overview()
+    const overview = session.overview()
     if (!overview) return
     overview.nodes.forEach((node) => {
       if (serverSync().session.get(node.sessionID)) return
@@ -83,7 +84,7 @@ export function SessionAgentsPanel(props: { class?: string }) {
 
   return (
     <Show
-      when={!agents.loading() || agents.overview()}
+      when={!session.loading() || session.overview()}
       fallback={
         <div
           data-slot="session-agents-loading"
@@ -96,21 +97,21 @@ export function SessionAgentsPanel(props: { class?: string }) {
       }
     >
       <div class={`flex min-h-0 flex-col bg-background-base ${props.class ?? ""}`}>
-        <Show when={agents.warning() || agents.error()}>
+        <Show when={agents.warning() || agents.error() || session.warning() || session.error()}>
           <div
             data-slot="session-agents-warning"
             role="alert"
             class="flex shrink-0 items-center gap-2 border-b border-border-weaker-base bg-surface-raised-base px-3 py-2 text-11-regular text-text-weak"
           >
             <span class="min-w-0 flex-1 truncate">
-              {language.t(agents.error() ? "common.requestFailed" : "common.loading")}
+              {language.t(agents.error() || session.error() ? "common.requestFailed" : "common.loading")}
             </span>
             <button
               type="button"
               data-slot="session-agents-retry"
               class="flex size-6 shrink-0 items-center justify-center rounded-md text-icon-base hover:bg-surface-raised-base-hover"
               aria-label={language.t("common.requestFailed")}
-              onClick={() => void agents.refresh()}
+              onClick={() => void Promise.all([agents.refresh(), session.refresh()])}
             >
               <Icon name="reset" size="small" />
             </button>
@@ -118,17 +119,17 @@ export function SessionAgentsPanel(props: { class?: string }) {
         </Show>
         <AgentsPanel
           class="min-h-0 flex-1"
-          projection={agents.projection()}
-          historyVisible={agents.showHistory()}
-          now={agents.now}
-          expanded={agents.expanded}
-          onExpandedChange={agents.setExpanded}
+          projection={session.projection()}
+          historyVisible={session.showHistory()}
+          now={session.now}
+          expanded={session.expanded}
+          onExpandedChange={session.setExpanded}
           usage={(sessionID) => {
             const session = sync().session.get(sessionID)
             if (!session) return undefined
             return { cost: session.cost, tokens: session.tokens }
           }}
-          onHistoryVisibleChange={agents.setShowHistory}
+          onHistoryVisibleChange={session.setShowHistory}
           onOpenSession={(sessionID) => {
             agents.setMobileDrawerOpen(false)
             if (params.serverKey) {

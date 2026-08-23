@@ -4,6 +4,7 @@ import type { ServerConnection } from "@/context/server"
 import { authTokenFromCredentials } from "@/utils/server"
 
 const decodeOverview = Schema.decodeUnknownPromise(AgentRun.Overview)
+const decodeSnapshot = Schema.decodeUnknownPromise(AgentRun.Snapshot)
 const decodeInfo = Schema.decodeUnknownOption(AgentRun.Info)
 
 type AgentRunFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -75,4 +76,30 @@ export async function fetchAgentRunOverview(input: {
   })
   if (!response.ok) throw new Error(`Failed to load agent runs: ${response.status} ${response.statusText}`.trim())
   return decodeOverview(await response.json())
+}
+
+export async function fetchAgentRunSnapshot(input: {
+  server: ServerConnection.HttpBase
+  fetch: AgentRunFetch
+  rootSessionID: string
+  signal?: AbortSignal
+}) {
+  const fetchSnapshot = input.fetch
+  const response = await fetchSnapshot(
+    new URL(`/api/session/${encodeURIComponent(input.rootSessionID)}/agent-run`, input.server.url),
+    {
+      method: "GET",
+      headers: input.server.password
+        ? {
+            Authorization: `Basic ${authTokenFromCredentials({
+              username: input.server.username,
+              password: input.server.password,
+            })}`,
+          }
+        : undefined,
+      signal: input.signal,
+    },
+  )
+  if (!response.ok) throw new Error(`Failed to load agent runs: ${response.status} ${response.statusText}`.trim())
+  return decodeSnapshot(await response.json())
 }

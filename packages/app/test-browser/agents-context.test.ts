@@ -3,7 +3,7 @@ import { Agent, AgentRun, Session, SessionMessage } from "@opencode-ai/schema"
 import { QueryClient } from "@tanstack/solid-query"
 import { DateTime, Schema } from "effect"
 import { createRoot, createSignal } from "solid-js"
-import { createAgentsContext } from "@/pages/session/agents/context"
+import { createAgentsContext, createSessionAgentsContext } from "@/pages/session/agents/context"
 
 const rootID = Session.ID.make("ses_root")
 
@@ -65,6 +65,13 @@ function activeOverview(rootSessionID: string, childSessionID: string) {
     ],
     active: [info],
     history: [],
+  })
+}
+
+function activeSnapshot(rootSessionID: string, childSessionID: string) {
+  return AgentRun.Snapshot.make({
+    rootSessionID: Session.ID.make(rootSessionID),
+    ...activeOverview(rootSessionID, childSessionID),
   })
 }
 
@@ -285,7 +292,7 @@ test("owns history, row expansion, and mobile drawer state", () => {
   owner.dispose()
 })
 
-test("keeps the global overview and panel state across session route changes", async () => {
+test("keeps the global overview across session route changes", async () => {
   const [sessionID, setSessionID] = createSignal("ses_child_a")
   let requests = 0
   const time = clock(3_000)
@@ -310,20 +317,152 @@ test("keeps the global overview and panel state across session route changes", a
 
   await settle()
   expect(time.active()).toBe(1)
-  owner.agents.setShowHistory(true)
-  owner.agents.setExpanded("ses_child_a", true)
-  owner.agents.setMobileDrawerOpen(true)
 
   setSessionID("ses_child_b")
   await settle()
   expect(requests).toBe(1)
   expect(owner.agents.overview()?.nodes.map((node) => String(node.sessionID))).toEqual(["ses_child_a"])
-  expect(owner.agents.showHistory()).toBeTrue()
-  expect(owner.agents.expanded("ses_child_a")).toBeTrue()
-  expect(owner.agents.mobileDrawerOpen()).toBeTrue()
   expect(time.active()).toBe(1)
   owner.dispose()
   expect(time.active()).toBe(0)
+})
+
+test("resets session-scoped data and panel state when the viewed root changes", async () => {
+  const [rootSessionID, setRootSessionID] = createSignal<string | undefined>("ses_root_a")
+  const nextRoot = Promise.withResolvers<AgentRun.Snapshot>()
+  const requests: string[] = []
+  const owner = createRoot((dispose) => ({
+    dispose,
+    agents: createSessionAgentsContext({
+      rootSessionID,
+      queryKey: () => "server\0workspace",
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      fetchSnapshot: async (root) => {
+        requests.push(root)
+        if (root === "ses_root_b") return nextRoot.promise
+        return activeSnapshot(root, "ses_child_a")
+      },
+      events: events(),
+      now: () => 3_000,
+    }),
+  }))
+
+  await settle()
+  expect(requests).toEqual(["ses_root_a"])
+  owner.agents.setShowHistory(true)
+  owner.agents.setExpanded("ses_child_a", true)
+
+  setRootSessionID("ses_root_b")
+  await settle()
+
+  expect(requests).toEqual(["ses_root_a", "ses_root_b"])
+  expect(owner.agents.overview()).toBeUndefined()
+  expect(owner.agents.showHistory()).toBeFalse()
+  expect(owner.agents.expanded("ses_child_a")).toBeFalse()
+  expect(owner.agents.loading()).toBeTrue()
+
+  nextRoot.resolve(activeSnapshot("ses_root_b", "ses_child_b"))
+  await settle()
+  await settle()
+
+  expect(owner.agents.projection().rows.map((row) => String(row.node.sessionID))).toEqual(["ses_child_b"])
+  owner.dispose()
+})
+
+test("ignores session-scoped run events from another session tree", async () => {
+  const eventLayer = events()
+  let requests = 0
+  const owner = createRoot((dispose) => ({
+    dispose,
+    agents: createSessionAgentsContext({
+      rootSessionID: () => "ses_root",
+      queryKey: () => "server\0workspace",
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      fetchSnapshot: async () => {
+        requests++
+        return activeSnapshot("ses_root", "ses_child")
+      },
+      events: eventLayer,
+      now: () => 3_000,
+    }),
+  }))
+
+  await settle()
+  eventLayer.emit({
+    type: "agent.run.updated",
+    properties: {
+      info: Schema.encodeSync(AgentRun.Info)(
+        run({
+          id: "arun_unrelated",
+          sessionID: "ses_unrelated_child",
+          rootSessionID: "ses_unrelated_root",
+          state: { type: "running" },
+        }),
+      ),
+    },
+  })
+  await settle()
+
+  expect(requests).toBe(1)
+  expect(owner.agents.partial()).toBeFalse()
+  expect(owner.agents.projection().rows.map((row) => String(row.node.sessionID))).toEqual(["ses_child"])
+  owner.dispose()
+})
+
+test("repairs session journal overflow when the viewed root changes during a snapshot", async () => {
+  const [rootSessionID, setRootSessionID] = createSignal<string | undefined>("ses_root_a")
+  const eventLayer = events()
+  const nextRoot = Promise.withResolvers<AgentRun.Snapshot>()
+  const infos = Array.from({ length: 257 }, (_, index) =>
+    run({
+      id: `arun_root_b_${index}`,
+      sessionID: "ses_child_b",
+      rootSessionID: "ses_root_b",
+      state: { type: "running" },
+    }),
+  )
+  let rootBRequests = 0
+  const owner = createRoot((dispose) => ({
+    dispose,
+    agents: createSessionAgentsContext({
+      rootSessionID,
+      queryKey: () => "server\0workspace",
+      queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      fetchSnapshot: async (root) => {
+        if (root === "ses_root_a") return activeSnapshot(root, "ses_child_a")
+        rootBRequests++
+        if (rootBRequests === 1) return nextRoot.promise
+        const current = activeSnapshot(root, "ses_child_b")
+        return AgentRun.Snapshot.make({ ...current, active: infos })
+      },
+      events: eventLayer,
+      now: () => 3_000,
+    }),
+  }))
+  const emit = (info: AgentRun.Info) =>
+    eventLayer.emit({
+      type: "agent.run.updated",
+      properties: { info: Schema.encodeSync(AgentRun.Info)(info) },
+    })
+
+  await settle()
+  Array.from({ length: 20 }, (_, index) =>
+    run({ id: `arun_root_a_${index}`, sessionID: "ses_child_a", state: { type: "running" } }),
+  ).forEach(emit)
+  setRootSessionID("ses_root_b")
+  await settle()
+  infos.forEach(emit)
+
+  const stale = activeSnapshot("ses_root_b", "ses_child_b")
+  nextRoot.resolve(AgentRun.Snapshot.make({ ...stale, active: [] }))
+  await settle()
+  await settle()
+  await settle()
+
+  expect(rootBRequests).toBe(2)
+  expect(owner.agents.partial()).toBeFalse()
+  expect(owner.agents.overview()?.active.some((info) => info.id === infos[0]?.id)).toBeTrue()
+  owner.dispose()
 })
 
 test("isolates overview data and event journals when the connected server changes", async () => {

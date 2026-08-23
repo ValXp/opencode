@@ -143,7 +143,7 @@ Hidden system agent that creates session summaries. It runs automatically and is
 
 Each delegated subagent execution is recorded as a durable **AgentRun**. An AgentRun ID identifies one execution, while a child Session ID identifies the conversation where the work happens. Resuming an existing child session creates a new AgentRun and can link it to the prior run with `previousRunID`; the run and session IDs are not interchangeable.
 
-The web app shows runs from every session tree on the connected server in the [Agents workspace](/docs/web#agents).
+The web app's [Agents workspace](/docs/web#agents) shows runs for the currently viewed session tree, while the top-right indicator counts active runs across every session tree on the connected server.
 
 ### Statuses
 

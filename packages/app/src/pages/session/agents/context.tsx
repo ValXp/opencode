@@ -1,12 +1,21 @@
 import { AgentRun } from "@opencode-ai/schema"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createQuery, type QueryClient } from "@tanstack/solid-query"
+import { useParams } from "@solidjs/router"
+import { createQuery, type QueryClient, skipToken } from "@tanstack/solid-query"
 import { batch, createEffect, createMemo, on, onCleanup, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
+import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync } from "@/context/server-sync"
 import { projectAgents, type AgentsProjection, upsertAgentRun } from "./model"
-import { decodeAgentRunEvent, fetchAgentRunOverview, isServerConnectedEvent, serverConnectedEventID } from "./source"
+import {
+  decodeAgentRunEvent,
+  fetchAgentRunOverview,
+  fetchAgentRunSnapshot,
+  isServerConnectedEvent,
+  serverConnectedEventID,
+} from "./source"
 
 const emptyProjection: AgentsProjection = {
   rows: [],
@@ -22,27 +31,77 @@ type AgentsEvents = {
 }
 type FreshnessTimer = number | ReturnType<typeof window.setInterval>
 type JournalEntry = { sequence: number; info: AgentRun.Info }
-type OverviewResult = {
-  serverKey: string
-  overview: AgentRun.Overview
+type Journal = {
+  events: Map<AgentRun.ID, JournalEntry>
+  evictedSequence: number
+  attemptedEvictedSequence: number
+  repairAttempts: Map<AgentRun.ID, number>
+}
+type AgentRunView = AgentRun.Overview | AgentRun.Snapshot
+type OverviewResult<T extends AgentRunView> = {
+  queryKey: string
+  overview: T
   baseline: number
   token: object
 }
-
-export function createAgentsContext(input: {
-  queryKey: () => string
+type AgentsContextOptions = {
   queryClient?: QueryClient
-  fetchOverview: (signal?: AbortSignal) => Promise<AgentRun.Overview>
   events: AgentsEvents
   initialConnectionID?: string
   now?: () => number
   setInterval?: (callback: () => void, ms: number) => FreshnessTimer
   clearInterval?: (timer: FreshnessTimer) => void
-}) {
-  const serverKey = createMemo(input.queryKey)
+}
+
+export function createAgentsContext(
+  input: AgentsContextOptions & {
+    queryKey: () => string
+    fetchOverview: (signal?: AbortSignal) => Promise<AgentRun.Overview>
+  },
+) {
+  return createAgentRunContext({
+    ...input,
+    queryPrefix: "agents",
+    scope: input.queryKey,
+    queryKey: (scope) => scope,
+    fetchOverview: (_, signal) => input.fetchOverview(signal),
+  })
+}
+
+export function createSessionAgentsContext(
+  input: AgentsContextOptions & {
+    rootSessionID: () => string | undefined
+    queryKey: () => string
+    fetchSnapshot: (rootSessionID: string, signal?: AbortSignal) => Promise<AgentRun.Snapshot>
+  },
+) {
+  return createAgentRunContext({
+    ...input,
+    queryPrefix: "session-agents",
+    scope: input.rootSessionID,
+    queryKey: (rootSessionID) => `${input.queryKey()}\0${rootSessionID}`,
+    fetchOverview: input.fetchSnapshot,
+  })
+}
+
+function createAgentRunContext<T extends AgentRunView>(
+  input: AgentsContextOptions & {
+    queryPrefix: "agents" | "session-agents"
+    scope: () => string | undefined
+    queryKey: (scope: string) => string
+    fetchOverview: (scope: string, signal?: AbortSignal) => Promise<T>
+  },
+) {
+  const request = createMemo(() => {
+    const scope = input.scope()
+    if (!scope) return
+    return { scope, queryKey: input.queryKey(scope) }
+  })
+  const queryKey = createMemo(() => request()?.queryKey)
   const now = input.now ?? Date.now
   const [store, setStore] = createStore<{
-    overview?: AgentRun.Overview
+    queryKey?: string
+    overview?: T
     error?: unknown
     lastSuccessAt?: number
     now: number
@@ -52,28 +111,28 @@ export function createAgentsContext(input: {
     partial: boolean
   }>({ now: now(), showHistory: false, expanded: {}, mobileDrawerOpen: false, partial: false })
   let eventSequence = 0
-  let evictedEventSequence = 0
-  let attemptedEvictedEventSequence = 0
-  let repair: { serverKey: string; token: object } | undefined
+  let repair: { queryKey: string; token: object } | undefined
   let committedToken: object | undefined
-  const runEvents = new Map<AgentRun.ID, JournalEntry>()
-  const repairAttemptVersions = new Map<AgentRun.ID, number>()
+  const journals = new Map<string, Journal>()
   const queryClient = input.queryClient
   const query = createQuery(
     () => {
-      const key = serverKey()
+      const current = request()
       return {
-        queryKey: ["agents", key] as const,
-        queryFn: async ({ signal }: { signal: AbortSignal }): Promise<OverviewResult> => {
-          const baseline = eventSequence
-          markRepairAttempts(baseline)
-          return {
-            serverKey: key,
-            overview: await input.fetchOverview(signal),
-            baseline,
-            token: {},
-          }
-        },
+        queryKey: [input.queryPrefix, current?.queryKey] as const,
+        enabled: current !== undefined,
+        queryFn: current
+          ? async ({ signal }: { signal: AbortSignal }): Promise<OverviewResult<T>> => {
+              const baseline = eventSequence
+              markRepairAttempts(baseline)
+              return {
+                queryKey: current.queryKey,
+                overview: await input.fetchOverview(current.scope, signal),
+                baseline,
+                token: {},
+              }
+            }
+          : skipToken,
         retry: false,
         refetchInterval: false,
         refetchOnMount: true,
@@ -102,60 +161,106 @@ export function createAgentsContext(input: {
   })
   onCleanup(stopTimer)
   const refresh = async () => {
+    if (!request()) return
     await query.refetch({ cancelRefetch: false })
   }
 
-  function recordRunEvent(info: AgentRun.Info) {
-    const sequence = ++eventSequence
-    const current = runEvents.get(info.id)
-    if (current && current.info.version >= info.version) return false
-    runEvents.set(info.id, { sequence, info })
-    if (runEvents.size <= PENDING_RUN_EVENTS_LIMIT) return true
-    const oldest = runEvents.keys().next().value
-    if (oldest !== undefined) {
-      const evicted = runEvents.get(oldest)
-      if (evicted) evictedEventSequence = Math.max(evictedEventSequence, evicted.sequence)
-      runEvents.delete(oldest)
-      repairAttemptVersions.delete(oldest)
+  function getJournal(key: string) {
+    const current = journals.get(key)
+    if (current) return current
+    const next: Journal = {
+      events: new Map(),
+      evictedSequence: 0,
+      attemptedEvictedSequence: 0,
+      repairAttempts: new Map(),
     }
-    return true
+    journals.set(key, next)
+    return next
   }
 
-  function knownSession(overview: AgentRun.Overview, info: AgentRun.Info) {
-    return overview.nodes.some((node) => node.sessionID === info.sessionID)
+  function recordRunEvent(info: AgentRun.Info) {
+    const key = queryKey()
+    if (!key) return
+    const journal = getJournal(key)
+    const sequence = ++eventSequence
+    const current = journal.events.get(info.id)
+    if (current && current.info.version >= info.version) return
+    journal.events.set(info.id, { sequence, info })
+    if (journal.events.size <= PENDING_RUN_EVENTS_LIMIT) return key
+    const oldest = journal.events.keys().next().value
+    if (oldest !== undefined) {
+      const evicted = journal.events.get(oldest)
+      if (evicted) journal.evictedSequence = Math.max(journal.evictedSequence, evicted.sequence)
+      journal.events.delete(oldest)
+      journal.repairAttempts.delete(oldest)
+    }
+    return key
   }
 
-  function unresolvedRunEvents(overview: AgentRun.Overview) {
-    return [...runEvents.values()].filter((entry) => !knownSession(overview, entry.info))
+  function knownSession(overview: T, info: AgentRun.Info) {
+    return (
+      ("rootSessionID" in overview && overview.rootSessionID === info.sessionID) ||
+      overview.nodes.some((node) => node.sessionID === info.sessionID)
+    )
+  }
+
+  function relatedRunIDs(overview: T, key: string) {
+    const events = journals.get(key)?.events
+    if (!events) return new Set<AgentRun.ID>()
+    if (!("rootSessionID" in overview)) return new Set(events.keys())
+    const sessions = new Set([overview.rootSessionID, ...overview.nodes.map((node) => node.sessionID)])
+    const relevant = new Set<AgentRun.ID>()
+    const entries = [...events.values()]
+    while (true) {
+      const discovered = entries.filter(
+        (entry) =>
+          !relevant.has(entry.info.id) &&
+          (sessions.has(entry.info.sessionID) || sessions.has(entry.info.callerSessionID)),
+      )
+      if (!discovered.length) return relevant
+      discovered.forEach((entry) => {
+        relevant.add(entry.info.id)
+        sessions.add(entry.info.sessionID)
+      })
+    }
+  }
+
+  function unresolvedRunEvents(overview: T, key: string) {
+    const relevant = relatedRunIDs(overview, key)
+    return [...(journals.get(key)?.events.values() ?? [])].filter(
+      (entry) => relevant.has(entry.info.id) && !knownSession(overview, entry.info),
+    )
   }
 
   function markRepairAttempts(baseline: number) {
-    if (!store.overview) return
-    if (evictedEventSequence <= baseline) {
-      attemptedEvictedEventSequence = Math.max(attemptedEvictedEventSequence, evictedEventSequence)
-    }
-    unresolvedRunEvents(store.overview).forEach((entry) => {
+    const key = queryKey()
+    if (!key || !store.overview || store.queryKey !== key) return
+    const journal = getJournal(key)
+    if (journal.evictedSequence <= baseline)
+      journal.attemptedEvictedSequence = Math.max(journal.attemptedEvictedSequence, journal.evictedSequence)
+    unresolvedRunEvents(store.overview, key).forEach((entry) => {
       if (entry.sequence > baseline) return
-      repairAttemptVersions.set(
+      journal.repairAttempts.set(
         entry.info.id,
-        Math.max(repairAttemptVersions.get(entry.info.id) ?? -1, entry.info.version),
+        Math.max(journal.repairAttempts.get(entry.info.id) ?? -1, entry.info.version),
       )
     })
   }
 
   function ensureRepair() {
-    if (!store.overview) return
-    const key = serverKey()
-    const unresolved = unresolvedRunEvents(store.overview)
-    if (!unresolved.length && evictedEventSequence === 0) return
+    const key = queryKey()
+    if (!key || !store.overview || store.queryKey !== key) return
+    const journal = getJournal(key)
+    const unresolved = unresolvedRunEvents(store.overview, key)
+    if (!unresolved.length && journal.evictedSequence === 0) return
     setStore("partial", true)
-    if (repair?.serverKey === key) return
+    if (repair?.queryKey === key) return
     const needsRunRepair = unresolved.some(
-      (entry) => (repairAttemptVersions.get(entry.info.id) ?? -1) < entry.info.version,
+      (entry) => (journal.repairAttempts.get(entry.info.id) ?? -1) < entry.info.version,
     )
-    if (!needsRunRepair && attemptedEvictedEventSequence >= evictedEventSequence) return
+    if (!needsRunRepair && journal.attemptedEvictedSequence >= journal.evictedSequence) return
     const token = {}
-    repair = { serverKey: key, token }
+    repair = { queryKey: key, token }
     void query
       .refetch({ cancelRefetch: false })
       .catch(() => {})
@@ -166,30 +271,41 @@ export function createAgentsContext(input: {
       })
   }
 
-  function applyOverview(result: OverviewResult) {
-    if (evictedEventSequence <= result.baseline) {
-      evictedEventSequence = 0
-      attemptedEvictedEventSequence = 0
+  function applyOverview(result: OverviewResult<T>) {
+    const journal = getJournal(result.queryKey)
+    if (journal.evictedSequence <= result.baseline) {
+      journal.evictedSequence = 0
+      journal.attemptedEvictedSequence = 0
     }
-    const next = [...runEvents.values()].reduce((overview, entry) => {
+    const relevant = relatedRunIDs(result.overview, result.queryKey)
+    const next = [...journal.events.values()].reduce((overview, entry) => {
+      if (!relevant.has(entry.info.id)) {
+        journal.events.delete(entry.info.id)
+        journal.repairAttempts.delete(entry.info.id)
+        return overview
+      }
       if (!knownSession(overview, entry.info)) return overview
-      repairAttemptVersions.delete(entry.info.id)
-      if (entry.sequence <= result.baseline && runEvents.get(entry.info.id) === entry) runEvents.delete(entry.info.id)
+      journal.repairAttempts.delete(entry.info.id)
+      if (entry.sequence <= result.baseline && journal.events.get(entry.info.id) === entry)
+        journal.events.delete(entry.info.id)
       return upsertAgentRun(overview, entry.info)
     }, result.overview)
-    const partial = evictedEventSequence > 0 || unresolvedRunEvents(next).length > 0
-    setStore({ overview: next, error: undefined, lastSuccessAt: now(), partial })
+    const partial =
+      journal.evictedSequence > 0 || unresolvedRunEvents(next, result.queryKey).length > 0
+    setStore({ queryKey: result.queryKey, overview: next, error: undefined, lastSuccessAt: now(), partial })
     if (partial) ensureRepair()
   }
 
   function applyRunEvent(info: AgentRun.Info) {
-    if (!recordRunEvent(info) || !store.overview) return
+    const key = recordRunEvent(info)
+    if (!key || !store.overview || store.queryKey !== key) return
+    if (!relatedRunIDs(store.overview, key).has(info.id)) return
     if (!knownSession(store.overview, info)) {
       setStore("partial", true)
       ensureRepair()
       return
     }
-    repairAttemptVersions.delete(info.id)
+    getJournal(key).repairAttempts.delete(info.id)
     const next = upsertAgentRun(store.overview, info)
     if (next === store.overview) return
     setStore("overview", next)
@@ -216,9 +332,10 @@ export function createAgentsContext(input: {
 
   createEffect(
     on(
-      serverKey,
-      () => {
+      queryKey,
+      (key) => {
         batch(() => {
+          setStore("queryKey", undefined)
           setStore("overview", undefined)
           setStore("error", undefined)
           setStore("lastSuccessAt", undefined)
@@ -228,11 +345,9 @@ export function createAgentsContext(input: {
           setStore("partial", false)
           repair = undefined
           committedToken = undefined
-          eventSequence = 0
-          evictedEventSequence = 0
-          attemptedEvictedEventSequence = 0
-          runEvents.clear()
-          repairAttemptVersions.clear()
+          journals.forEach((_, candidate) => {
+            if (candidate !== key) journals.delete(candidate)
+          })
         })
       },
       { defer: true },
@@ -240,9 +355,9 @@ export function createAgentsContext(input: {
   )
 
   createEffect(() => {
-    const key = serverKey()
+    const key = queryKey()
     const result = query.data
-    if (!result || result.serverKey !== key || committedToken === result.token) return
+    if (!key || !result || result.queryKey !== key || committedToken === result.token) return
     committedToken = result.token
     untrack(() => applyOverview(result))
   })
@@ -264,7 +379,7 @@ export function createAgentsContext(input: {
   return {
     projection,
     overview: () => store.overview,
-    loading: () => query.isFetching,
+    loading: () => request() !== undefined && query.isFetching,
     error: () => store.error,
     lastSuccessAt: () => store.lastSuccessAt,
     stale,
@@ -287,10 +402,25 @@ export function createAgentsContext(input: {
 const agentsContext = createSimpleContext({
   name: "Agents",
   init: () => {
+    const params = useParams<{ id?: string }>()
     const platform = usePlatform()
+    const sdk = useSDK()
     const serverSDK = useServerSDK()
+    const serverSync = useServerSync()
+    const [lineage, setLineage] = createStore<{
+      sessionID?: string
+      rootSessionID?: string
+      loading: boolean
+      error?: unknown
+    }>({ loading: false })
+    let lineageToken: object | undefined
+    const events = {
+      listen(listener: (event: unknown) => void) {
+        return serverSDK().event.listen((event) => listener(event.details))
+      },
+    }
 
-    return createAgentsContext({
+    const agents = createAgentsContext({
       queryKey: () => serverSDK().scope,
       fetchOverview: (signal) =>
         fetchAgentRunOverview({
@@ -299,12 +429,66 @@ const agentsContext = createSimpleContext({
           signal,
         }),
       initialConnectionID: serverSDK().event.connectionID,
-      events: {
-        listen(listener) {
-          return serverSDK().event.listen((event) => listener(event.details))
-        },
-      },
+      events,
     })
+    const resolveLineage = () => {
+      const sessionID = params.id
+      const token = {}
+      lineageToken = token
+      if (!sessionID) {
+        setLineage({ sessionID: undefined, rootSessionID: undefined, loading: false, error: undefined })
+        return Promise.resolve()
+      }
+      const cached = serverSync().session.lineage.peek(sessionID)
+      if (cached) {
+        setLineage({ sessionID, rootSessionID: cached.root.id, loading: false, error: undefined })
+        return Promise.resolve()
+      }
+      setLineage({ sessionID, rootSessionID: undefined, loading: true, error: undefined })
+      return serverSync()
+        .session.lineage.resolve(sessionID)
+        .then((result) => {
+          if (lineageToken !== token) return
+          setLineage({ sessionID, rootSessionID: result.root.id, loading: false, error: undefined })
+        })
+        .catch((error) => {
+          if (lineageToken !== token) return
+          setLineage({ sessionID, rootSessionID: undefined, loading: false, error })
+        })
+    }
+    createEffect(on(() => params.id, () => void resolveLineage()))
+    onCleanup(() => {
+      lineageToken = undefined
+    })
+    const scoped = createSessionAgentsContext({
+      rootSessionID: () => (lineage.sessionID === params.id ? lineage.rootSessionID : undefined),
+      queryKey: () => `${serverSDK().scope}\0${sdk().directory}`,
+      fetchSnapshot: (rootSessionID, signal) =>
+        fetchAgentRunSnapshot({
+          server: serverSDK().server.http,
+          fetch: platform.fetch ?? fetch,
+          rootSessionID,
+          signal,
+        }),
+      initialConnectionID: serverSDK().event.connectionID,
+      events,
+    })
+    const session = {
+      ...scoped,
+      loading: () => {
+        if (params.id && lineage.sessionID !== params.id) return true
+        return lineage.loading || scoped.loading()
+      },
+      error: () => (lineage.sessionID === params.id ? lineage.error : undefined) ?? scoped.error(),
+      refresh: async () => {
+        if (lineage.sessionID !== params.id || !lineage.rootSessionID) {
+          await resolveLineage()
+          return
+        }
+        await scoped.refresh()
+      },
+    }
+    return { ...agents, session }
   },
 })
 

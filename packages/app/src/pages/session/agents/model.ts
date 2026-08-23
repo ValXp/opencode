@@ -110,7 +110,7 @@ export function projectAgents(overview: AgentRun.Overview, options: ProjectAgent
   }
 }
 
-export function upsertAgentRun(overview: AgentRun.Overview, info: AgentRun.Info): AgentRun.Overview {
+export function upsertAgentRun<T extends AgentRun.Overview>(overview: T, info: AgentRun.Info): T {
   const runs = overview.active.concat(overview.history)
   const existing = runs.filter((run) => run.id === info.id).sort((a, b) => b.version - a.version)[0]
   if (existing && existing.version >= info.version) return overview

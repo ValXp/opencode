@@ -1,5 +1,10 @@
 # V2 Schema Changelog
 
+## 2026-08-22: Separate Agent Indicator And Panel Scopes
+
+- Keep the top-right agent indicator backed by the server-wide overview.
+- Return the Agents workspace panel to the existing Session-scoped snapshot. No HTTP or schema contract changed.
+
 ## 2026-08-20: Add Server-Wide Agent Run Overview
 
 - Add `GET /api/agent-run`, returning every active run and the 100 most recent terminal runs across all Session trees on the connected server, plus reconciliation records and Session nodes needed to render them correctly. The existing Session-scoped endpoint remains available.
