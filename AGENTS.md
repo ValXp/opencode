@@ -4,6 +4,21 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 
+## Local OpenCode Server
+
+- On this host, `opencode.service` is a **user** systemd unit at `~/.config/systemd/user/opencode.service`. Use `systemctl --user`, not plain `systemctl`; running as root does not change the service's scope. Recheck the scope on other hosts.
+- Before restarting, run `systemctl --user show opencode.service --property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp`. Confirm `MainPID` matches the intended server and record the PID/start time. If checking both system and user managers, keep their output separate and do not hide failures with `|| true`.
+- When asked to restart the server hosting the current session, schedule the restart outside its process so the reply can finish. Both the scheduler and restart command must use the correct scope. For this host:
+
+  ```sh
+  systemd-run --user --unit="opencode-restart-$(date +%s)" \
+    --on-active=10s --timer-property=AccuracySec=1s \
+    /usr/bin/systemctl --user restart opencode.service
+  ```
+
+- Timer creation proves only that a restart is **scheduled**. After reconnecting, verify the service is active/running and its PID/start time changed before reporting it **restarted**. If it failed, inspect the job's status/journal in the same systemd scope.
+- A global model default and an existing session's selected model are separate. Verify the running server's resolved default after a model change; a fresh CLI config check or an old session's model label alone does not prove whether the server restarted.
+
 ## Branch Names
 
 Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
