@@ -14,6 +14,7 @@ import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import { ReservedTools } from "@opencode-ai/core/tool/reserved"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -210,7 +211,10 @@ function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission"
     Object.keys(input.tools),
     Permission.merge(input.agent.permission, input.permission ?? []),
   )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+  return Record.filter(
+    input.tools,
+    (_, k) => !ReservedTools.has(k) && input.user.tools?.[k] !== false && !disabled.has(k),
+  )
 }
 
 export function hasToolCalls(messages: ModelMessage[]): boolean {

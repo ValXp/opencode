@@ -1215,7 +1215,7 @@ describe("session.llm.stream", () => {
   )
 
   it.instance(
-    "keeps tools enabled by prompt permissions",
+    "never sends removed tools even when prompt permissions enable them",
     () =>
       Effect.gen(function* () {
         const fixture = loadFixture(alibabaQwenFixture.providerID, alibabaQwenFixture.modelID)
@@ -1236,7 +1236,10 @@ describe("session.llm.stream", () => {
           name: "test",
           mode: "primary",
           options: {},
-          permission: [{ permission: "question", pattern: "*", action: "deny" }],
+          permission: [
+            { permission: "question", pattern: "*", action: "deny" },
+            { permission: "todowrite", pattern: "*", action: "deny" },
+          ],
         } satisfies Agent.Info
 
         const user = {
@@ -1246,7 +1249,7 @@ describe("session.llm.stream", () => {
           time: { created: Date.now() },
           agent: agent.name,
           model: { providerID: ProviderV2.ID.make(alibabaQwenFixture.providerID), modelID: resolved.id },
-          tools: { question: true },
+          tools: { question: true, todowrite: true },
         } satisfies SessionV1.User
 
         yield* drain({
@@ -1254,7 +1257,10 @@ describe("session.llm.stream", () => {
           sessionID,
           model: resolved,
           agent,
-          permission: [{ permission: "question", pattern: "*", action: "allow" }],
+          permission: [
+            { permission: "question", pattern: "*", action: "allow" },
+            { permission: "todowrite", pattern: "*", action: "allow" },
+          ],
           system: ["You are a helpful assistant."],
           messages: [{ role: "user", content: "Hello" }],
           tools: {
@@ -1263,12 +1269,18 @@ describe("session.llm.stream", () => {
               inputSchema: z.object({}),
               execute: async () => ({ output: "" }),
             }),
+            todowrite: tool({
+              description: "Update tasks",
+              inputSchema: z.object({}),
+              execute: async () => ({ output: "" }),
+            }),
           },
         })
 
         const capture = yield* Effect.promise(() => request)
         const tools = capture.body.tools as Array<{ function?: { name?: string } }> | undefined
-        expect(tools?.some((item) => item.function?.name === "question")).toBe(true)
+        expect(tools?.some((item) => item.function?.name === "question") ?? false).toBe(false)
+        expect(tools?.some((item) => item.function?.name === "todowrite") ?? false).toBe(false)
       }),
     {
       config: () => ({

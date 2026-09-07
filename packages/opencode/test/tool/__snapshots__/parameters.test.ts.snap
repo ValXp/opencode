@@ -194,65 +194,6 @@ exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
 }
 `;
 
-exports[`tool parameters JSON Schema (wire shape) question 1`] = `
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "questions": {
-      "description": "Questions to ask",
-      "items": {
-        "properties": {
-          "header": {
-            "description": "Very short label (max 30 chars)",
-            "type": "string",
-          },
-          "multiple": {
-            "description": "Allow selecting multiple choices",
-            "type": "boolean",
-          },
-          "options": {
-            "description": "Available choices",
-            "items": {
-              "properties": {
-                "description": {
-                  "description": "Explanation of choice",
-                  "type": "string",
-                },
-                "label": {
-                  "description": "Display text (1-5 words, concise)",
-                  "type": "string",
-                },
-              },
-              "required": [
-                "label",
-                "description",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "question": {
-            "description": "Complete question",
-            "type": "string",
-          },
-        },
-        "required": [
-          "question",
-          "header",
-          "options",
-        ],
-        "type": "object",
-      },
-      "type": "array",
-    },
-  },
-  "required": [
-    "questions",
-  ],
-  "type": "object",
-}
-`;
-
 exports[`tool parameters JSON Schema (wire shape) read 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -330,44 +271,6 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
     "description",
     "prompt",
     "subagent_type",
-  ],
-  "type": "object",
-}
-`;
-
-exports[`tool parameters JSON Schema (wire shape) todo 1`] = `
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "todos": {
-      "description": "The updated todo list",
-      "items": {
-        "properties": {
-          "content": {
-            "description": "Brief description of the task",
-            "type": "string",
-          },
-          "priority": {
-            "description": "Priority level of the task: high, medium, low",
-            "type": "string",
-          },
-          "status": {
-            "description": "Current status of the task: pending, in_progress, completed, cancelled",
-            "type": "string",
-          },
-        },
-        "required": [
-          "content",
-          "status",
-          "priority",
-        ],
-        "type": "object",
-      },
-      "type": "array",
-    },
-  },
-  "required": [
-    "todos",
   ],
   "type": "object",
 }
@@ -460,6 +363,103 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
   "required": [
     "content",
     "filePath",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters persisted history payloads question schema 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "questions": {
+      "description": "Questions to ask",
+      "items": {
+        "properties": {
+          "header": {
+            "description": "Very short label (max 30 chars)",
+            "type": "string",
+          },
+          "multiple": {
+            "description": "Allow selecting multiple choices",
+            "type": "boolean",
+          },
+          "options": {
+            "description": "Available choices",
+            "items": {
+              "properties": {
+                "description": {
+                  "description": "Explanation of choice",
+                  "type": "string",
+                },
+                "label": {
+                  "description": "Display text (1-5 words, concise)",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "label",
+                "description",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "question": {
+            "description": "Complete question",
+            "type": "string",
+          },
+        },
+        "required": [
+          "question",
+          "header",
+          "options",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "questions",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters persisted history payloads todo schema 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "todos": {
+      "description": "The updated todo list",
+      "items": {
+        "properties": {
+          "content": {
+            "description": "Brief description of the task",
+            "type": "string",
+          },
+          "priority": {
+            "description": "Priority level of the task: high, medium, low",
+            "type": "string",
+          },
+          "status": {
+            "description": "Current status of the task: pending, in_progress, completed, cancelled",
+            "type": "string",
+          },
+        },
+        "required": [
+          "content",
+          "status",
+          "priority",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "todos",
   ],
   "type": "object",
 }

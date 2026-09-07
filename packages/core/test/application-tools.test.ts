@@ -83,6 +83,32 @@ describe("ApplicationTools", () => {
     }),
   )
 
+  it.effect("reserves removed tool names across application and Location registrations", () =>
+    Effect.gen(function* () {
+      const applications = yield* ApplicationTools.Service
+      const tools: Tools.Interface = yield* Tools.Service
+      const registry = yield* ToolRegistry.Service
+
+      expect(yield* Effect.flip(applications.register({ question: contextual([]) }))).toMatchObject({
+        name: "question",
+        message: "Reserved tool name: question",
+      })
+      expect(yield* Effect.flip(tools.register({ todowrite: contextual([]) }))).toMatchObject({
+        name: "todowrite",
+        message: "Reserved tool name: todowrite",
+      })
+      expect(yield* toolDefinitions(registry)).toEqual([])
+      expect(
+        yield* settleTool(registry, {
+          sessionID,
+          agent,
+          assistantMessageID,
+          call: { type: "tool-call", id: "call-question", name: "question", input: {} },
+        }),
+      ).toEqual({ result: { type: "error", value: "Unknown tool: question" } })
+    }),
+  )
+
   it.effect("filters an application tool by its name without adding execution authorization", () =>
     Effect.gen(function* () {
       const applications = yield* ApplicationTools.Service

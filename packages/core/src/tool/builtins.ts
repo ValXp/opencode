@@ -7,10 +7,8 @@ import { ApplyPatchTool } from "./apply-patch"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
-import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { SkillTool } from "./skill"
-import { TodoWriteTool } from "./todowrite"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { WriteTool } from "./write"
@@ -37,10 +35,8 @@ export const node = makeLocationNode({
     EditTool.node,
     GlobTool.node,
     GrepTool.node,
-    QuestionTool.node,
     ReadTool.node,
     SkillTool.node,
-    TodoWriteTool.node,
     WebFetchTool.node,
     WebSearchTool.node,
     WriteTool.node,

@@ -63,7 +63,7 @@ describe("ToolRegistry", () => {
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
       yield* service.register({
-        question: make(),
+        lookup: make(),
         bash: make(),
         edit: make("edit"),
         write: make("edit"),
@@ -72,7 +72,7 @@ describe("ToolRegistry", () => {
       const names = (rules: Parameters<ToolRegistry.Interface["materialize"]>[0]) =>
         toolDefinitions(service, rules).pipe(Effect.map((definitions) => definitions.map((tool) => tool.name)))
 
-      expect(yield* names([{ action: "question", resource: "*", effect: "deny" }])).toEqual([
+      expect(yield* names([{ action: "lookup", resource: "*", effect: "deny" }])).toEqual([
         "bash",
         "edit",
         "write",
@@ -81,16 +81,16 @@ describe("ToolRegistry", () => {
       expect(
         yield* names([
           { action: "*", resource: "*", effect: "deny" },
-          { action: "question", resource: "private", effect: "allow" },
+          { action: "lookup", resource: "private", effect: "allow" },
         ]),
-      ).toEqual(["question"])
+      ).toEqual(["lookup"])
       expect(
         yield* names([
-          { action: "question", resource: "private", effect: "allow" },
+          { action: "lookup", resource: "private", effect: "allow" },
           { action: "*", resource: "*", effect: "deny" },
         ]),
       ).toEqual([])
-      expect(yield* names([{ action: "edit", resource: "*", effect: "deny" }])).toEqual(["question", "bash"])
+      expect(yield* names([{ action: "edit", resource: "*", effect: "deny" }])).toEqual(["lookup", "bash"])
     }),
   )
 
@@ -100,7 +100,7 @@ describe("ToolRegistry", () => {
       const shared = make()
       yield* service.register({ first: shared })
       yield* service.register({ second: Tool.withPermission(shared, "edit") })
-      Tool.withPermission(shared, "question")
+      Tool.withPermission(shared, "other")
 
       expect(
         (yield* toolDefinitions(service, [{ action: "edit", resource: "*", effect: "deny" }])).map(

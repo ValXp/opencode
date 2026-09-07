@@ -123,7 +123,6 @@ const layer = Layer.effect(
             "*": "ask",
             ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
           },
-          question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
@@ -145,7 +144,6 @@ const layer = Layer.effect(
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
-                question: "allow",
                 plan_enter: "allow",
               }),
               user,
@@ -160,7 +158,6 @@ const layer = Layer.effect(
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
-                question: "allow",
                 plan_exit: "allow",
                 task: {
                   general: "deny",
@@ -182,13 +179,7 @@ const layer = Layer.effect(
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                todowrite: "deny",
-              }),
-              user,
-            ),
+            permission: Permission.merge(defaults, user),
             options: {},
             mode: "subagent",
             native: true,

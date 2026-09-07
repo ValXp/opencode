@@ -44,6 +44,16 @@ const brokenPluginLayer = Layer.succeed(
               args: undefined as unknown as Record<string, never>,
               execute: async () => "ok",
             },
+            question: {
+              description: "question replacement",
+              args: {},
+              execute: async () => "should not execute",
+            },
+            todowrite: {
+              description: "todowrite replacement",
+              args: {},
+              execute: async () => "should not execute",
+            },
           },
         },
       ]),
@@ -74,20 +84,38 @@ const withCodeMode = testEffect(
               } as MCPToolDef,
               client: {} as MCP.McpTool["client"],
             },
+            question: {
+              def: { name: "question", description: "removed", inputSchema: { type: "object" } } as MCPToolDef,
+              client: {} as MCP.McpTool["client"],
+            },
+            todowrite: {
+              def: { name: "todowrite", description: "removed", inputSchema: { type: "object" } } as MCPToolDef,
+              client: {} as MCP.McpTool["client"],
+            },
           }),
         clients: () => Effect.succeed({ weather: {} as any }),
       }),
     ],
   ]),
 )
-const withEmptyCodeMode = testEffect(
+const withReservedCodeMode = testEffect(
   LayerNode.compile(root, [
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
     [
       MCP.node,
       Layer.mock(MCP.Service, {
-        tools: () => Effect.succeed({}),
+        tools: () =>
+          Effect.succeed({
+            question: {
+              def: { name: "question", description: "removed", inputSchema: { type: "object" } } as MCPToolDef,
+              client: {} as MCP.McpTool["client"],
+            },
+            todowrite: {
+              def: { name: "todowrite", description: "removed", inputSchema: { type: "object" } } as MCPToolDef,
+              client: {} as MCP.McpTool["client"],
+            },
+          }),
         clients: () => Effect.succeed({}),
       }),
     ],
@@ -106,6 +134,35 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("does not expose removed tool names from built-ins or custom files", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const tool = path.join(test.directory, ".opencode", "tool")
+      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
+      yield* Effect.promise(() =>
+        Promise.all(
+          ["question", "todowrite"].map((name) =>
+            Bun.write(
+              path.join(tool, `${name}.ts`),
+              [
+                "export default {",
+                `  description: '${name} replacement',`,
+                "  args: {},",
+                "  execute: async () => 'should not execute',",
+                "}",
+                "",
+              ].join("\n"),
+            ),
+          ),
+        ),
+      )
+
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).not.toContain("question")
+      expect(ids).not.toContain("todowrite")
     }),
   )
 
@@ -133,10 +190,12 @@ describe("tool.registry", () => {
       expect(ids).toContain("execute")
       expect(tools.map((tool) => tool.id)).toContain("execute")
       expect(execute?.description).toContain("tools.weather.current(input: {\n  city: string,\n})")
+      expect(execute?.description).not.toContain("tools.question")
+      expect(execute?.description).not.toContain("tools.todowrite")
     }),
   )
 
-  withEmptyCodeMode.instance("does not expose execute when code mode has no visible tools", () =>
+  withReservedCodeMode.instance("does not expose execute when code mode only has removed tools", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agents = yield* Agent.Service
@@ -269,6 +328,8 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
       expect(ids).toContain("read")
       expect(ids).toContain("broken_plugin_tool")
+      expect(ids).not.toContain("question")
+      expect(ids).not.toContain("todowrite")
     }),
   )
 

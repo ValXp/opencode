@@ -12,6 +12,7 @@ import { ApplicationTools } from "./application-tools"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
+import { ReservedTools } from "./reserved"
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -110,7 +111,8 @@ const registryLayer = Layer.effect(
           if (registration) registrations.set(name, registration)
         }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+          if (ReservedTools.has(name) || whollyDisabled(permission(registration.tool, name), permissions))
+            registrations.delete(name)
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {

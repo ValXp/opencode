@@ -411,10 +411,11 @@ rules last.
 everything" and is rarely what the user wants.
 
 Known permission keys: `read, edit, glob, grep, list, bash, task,
-external_directory, todowrite, question, webfetch, websearch, lsp, doom_loop,
-skill`. Some of these (`todowrite,
-question, webfetch, websearch, doom_loop`) only accept a flat
-action, not a per-pattern object.
+external_directory, webfetch, websearch, lsp, doom_loop, skill`. Some of these
+(`webfetch`, `websearch`, `doom_loop`) only accept a flat action, not a
+per-pattern object. `question` and `todowrite` are reserved historical tool
+names; permission entries for them are inert and new tools cannot register
+under those names.
 
 `external_directory` patterns are filesystem paths (use `~/`, absolute paths,
 or globs like `~/projects/**`).

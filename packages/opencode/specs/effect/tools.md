@@ -6,7 +6,7 @@ Practical reference for the current tool-migration state in `packages/opencode`.
 
 `Tool.Def.execute` and `Tool.Info.init` already return `Effect` on this branch, and the built-in tool surface is now largely on the target shape.
 
-The current exported tools in `src/tool` all use `Tool.define(...)` with Effect-based initialization, and nearly all of them already build their tool body with `Effect.gen(...)` and `Effect.fn(...)`.
+The executable tools in `src/tool` use `Tool.define(...)` with Effect-based initialization, and nearly all of them already build their tool body with `Effect.gen(...)` and `Effect.fn(...)`. `question.ts` and `todo.ts` retain only persisted-history payload types for renderers; they are not executable tools.
 
 So the remaining work is no longer "convert tools to Effect at all". The remaining work is mostly:
 
@@ -46,11 +46,9 @@ These exported tool definitions currently use `Tool.define(...)` in `src/tool`:
 - [x] `invalid.ts`
 - [x] `lsp.ts`
 - [x] `plan.ts`
-- [x] `question.ts`
 - [x] `read.ts`
 - [x] `skill.ts`
 - [x] `task.ts`
-- [x] `todo.ts`
 - [x] `webfetch.ts`
 - [x] `websearch.ts`
 - [x] `write.ts`
@@ -60,6 +58,7 @@ Notes:
 - There is no current `ls.ts` tool file on this branch.
 - `truncate.ts` is an Effect service used by tools, not a tool definition itself.
 - `mcp-exa.ts`, `external-directory.ts`, and `schema.ts` are support modules, not standalone tool definitions.
+- `question.ts` and `todo.ts` contain history-only payload schemas for rendering stored tool parts.
 
 ## Follow-up cleanup
 

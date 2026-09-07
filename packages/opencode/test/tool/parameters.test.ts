@@ -2,12 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { Result, Schema } from "effect"
 import { ToolJsonSchema } from "../../src/tool/json-schema"
 
-// Each tool exports its parameters schema at module scope so this test can
-// import them without running the tool's Effect-based init. The JSON Schema
-// snapshot captures what the LLM sees; the parse assertions pin down the
-// accepts/rejects contract. `ToolJsonSchema.fromSchema` is the same helper `session/
-// prompt.ts` uses to emit tool schemas to the LLM, so the snapshots stay
-// provider-compatible while tools use Effect Schema internally.
+// Executable tools export their parameter schema at module scope so this test
+// can capture what the LLM sees without running Effect-based initialization.
+// Question and todo retain schemas only for rendering persisted history.
 
 import { Parameters as ApplyPatch } from "../../src/tool/apply_patch"
 import { Parameters as Edit } from "../../src/tool/edit"
@@ -44,17 +41,19 @@ describe("tool parameters", () => {
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
-    test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
-    test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
     test("write", () => expect(toJsonSchema(Write)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
-      const schema = toJsonSchema(Question)
+      const schema = toJsonSchema(
+        Schema.Struct({
+          questions: Schema.Array(Schema.Struct({ options: Schema.Array(Schema.Struct({ label: Schema.String })) })),
+        }),
+      )
       expect(schema).not.toHaveProperty("$defs")
       expect(schema).toMatchObject({
         properties: {
@@ -195,7 +194,10 @@ describe("tool parameters", () => {
     })
   })
 
-  describe("question", () => {
+  describe("persisted history payloads", () => {
+    test("question schema", () => expect(toJsonSchema(Question)).toMatchSnapshot())
+    test("todo schema", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
+
     test("accepts questions array", () => {
       const parsed = parse(Question, {
         questions: [
@@ -211,6 +213,15 @@ describe("tool parameters", () => {
     })
     test("rejects missing questions", () => {
       expect(accepts(Question, {})).toBe(false)
+    })
+    test("accepts todos array", () => {
+      const parsed = parse(Todo, {
+        todos: [{ id: "t1", content: "do x", status: "pending", priority: "medium" }],
+      })
+      expect(parsed.todos.length).toBe(1)
+    })
+    test("rejects missing todos", () => {
+      expect(accepts(Todo, {})).toBe(false)
     })
   })
 
@@ -245,18 +256,6 @@ describe("tool parameters", () => {
     })
     test("rejects missing prompt", () => {
       expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(false)
-    })
-  })
-
-  describe("todo", () => {
-    test("accepts todos array", () => {
-      const parsed = parse(Todo, {
-        todos: [{ id: "t1", content: "do x", status: "pending", priority: "medium" }],
-      })
-      expect(parsed.todos.length).toBe(1)
-    })
-    test("rejects missing todos", () => {
-      expect(accepts(Todo, {})).toBe(false)
     })
   })
 

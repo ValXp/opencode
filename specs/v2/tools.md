@@ -76,6 +76,8 @@ interface Tools {
 
 Tool names use a conservative provider-neutral grammar and are validated at registration. Provider-specific restrictions that cannot be validated generically fail during request preparation with an explicit model-compatibility error.
 
+`question` and `todowrite` are reserved historical names. Registration rejects them, materialization never advertises them, and settlement treats calls under either name as unknown. Their persisted Session data and APIs remain available for rendering and compatibility.
+
 Process application tools and Location tools expose the same `register` operation but retain separate services and stores. Registration placement determines scope, precedence, and authority; it does not change the tool type.
 
 A Location plugin receives only the narrow `Tools` registration capability, not the internal registry. Its installation effect runs once per applicable Location, acquires that Location's services, constructs its tools, and registers them in the plugin-owned Scope.

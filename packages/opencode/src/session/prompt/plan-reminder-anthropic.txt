@@ -30,7 +30,7 @@ You should build your plan incrementally by writing to or editing this file. NOT
    - Use 1 agent when: the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change. Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
    - Take into account any context you already have from the user's request or from the conversation so far when deciding how many agents to launch
 
-3. Use AskUserQuestion tool to clarify ambiguities in the user request up front.
+3. Ask the user directly to clarify ambiguities in the request up front.
 
 ### Phase 2: Planning
 
@@ -46,7 +46,7 @@ In the agent prompt:
 
 1. Collect all agent responses
 2. Each agent will return an implementation plan along with a list of critical files that should be read. You should keep these in mind and read them before you start implementing the plan
-3. Use AskUserQuestion to ask the users questions about trade offs.
+3. Ask the user directly about unresolved tradeoffs.
 
 ### Phase 4: Final Plan
 

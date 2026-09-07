@@ -5,6 +5,7 @@ import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
 import type { SessionSchema } from "../session/schema"
+import { ReservedTools } from "./reserved"
 
 export interface Context {
   readonly sessionID: SessionSchema.ID
@@ -131,10 +132,12 @@ export function make<
   return tool
 }
 
-export const validateName = (name: string) =>
-  /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
-    ? Effect.void
-    : Effect.fail(new RegistrationError({ name, message: `Invalid tool name: ${name}` }))
+export const validateName = (name: string) => {
+  if (ReservedTools.has(name))
+    return Effect.fail(new RegistrationError({ name, message: `Reserved tool name: ${name}` }))
+  if (/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)) return Effect.void
+  return Effect.fail(new RegistrationError({ name, message: `Invalid tool name: ${name}` }))
+}
 
 export const withPermission = <Input extends SchemaType<any>, Output extends SchemaType<any>>(
   tool: Definition<Input, Output>,

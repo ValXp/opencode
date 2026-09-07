@@ -31,6 +31,8 @@ Leaves own resolution, permission, and side-effect ordering. Translate only expe
 
 Built-ins register through `Tools.Service.register({ [name]: tool })`. Application tools register through `ApplicationTools.Service.register(...)`, exposed publicly as `opencode.tools.register(...)`.
 
+`question` and `todowrite` are reserved historical names. Never register or advertise tools under either name; retain their Session APIs only for persisted-data compatibility.
+
 Both are scoped:
 
 - The latest active same-placement registration wins.

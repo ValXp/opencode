@@ -99,8 +99,8 @@ type ToolDefs = {
   apply_patch: typeof ApplyPatchTool
   batch: Tool.Info
   task: typeof TaskTool
-  todowrite: typeof TodoWriteTool
-  question: typeof QuestionTool
+  todowrite: TodoWriteTool
+  question: QuestionTool
   read: typeof ReadTool
   glob: typeof GlobTool
   grep: typeof GrepTool
@@ -374,7 +374,7 @@ function runTask(p: ToolProps<typeof TaskTool>): ToolInline {
   }
 }
 
-function runTodo(p: ToolProps<typeof TodoWriteTool>): ToolInline {
+function runTodo(p: ToolProps<TodoWriteTool>): ToolInline {
   return {
     icon: "#",
     title: "Todos",
@@ -415,7 +415,7 @@ function runPatch(p: ToolProps<typeof ApplyPatchTool>): ToolInline {
   }
 }
 
-function runQuestion(p: ToolProps<typeof QuestionTool>): ToolInline {
+function runQuestion(p: ToolProps<QuestionTool>): ToolInline {
   const total = list(p.frame.input.questions).length
   return {
     icon: "→",
@@ -582,7 +582,7 @@ function snapTask(p: ToolProps<typeof TaskTool>): ToolSnapshot {
   }
 }
 
-function snapTodo(p: ToolProps<typeof TodoWriteTool>): ToolSnapshot {
+function snapTodo(p: ToolProps<TodoWriteTool>): ToolSnapshot {
   const items = list<{ status?: string; content?: string }>(p.frame.input.todos).flatMap((item) => {
     const content = typeof item?.content === "string" ? item.content : ""
     if (!content) {
@@ -604,7 +604,7 @@ function snapTodo(p: ToolProps<typeof TodoWriteTool>): ToolSnapshot {
   }
 }
 
-function snapQuestion(p: ToolProps<typeof QuestionTool>): ToolSnapshot {
+function snapQuestion(p: ToolProps<QuestionTool>): ToolSnapshot {
   const answers = list<unknown[]>(p.frame.meta.answers)
   const items = list<{ question?: string }>(p.frame.input.questions).map((item, i) => {
     const answer = list<string>(answers[i]).filter((entry) => typeof entry === "string")
@@ -788,11 +788,11 @@ function scrollTaskFinal(p: ToolProps<typeof TaskTool>): string {
   return `# ${kind} Task\n${row}`
 }
 
-function scrollTodoStart(_: ToolProps<typeof TodoWriteTool>): string {
+function scrollTodoStart(_: ToolProps<TodoWriteTool>): string {
   return ""
 }
 
-function scrollTodoFinal(p: ToolProps<typeof TodoWriteTool>): string {
+function scrollTodoFinal(p: ToolProps<TodoWriteTool>): string {
   const items = list<{ status?: string }>(p.input.todos)
   const time = span(p.frame.state)
   if (items.length === 0) {
@@ -824,11 +824,11 @@ function scrollTodoFinal(p: ToolProps<typeof TodoWriteTool>): string {
   return tail.join(" · ")
 }
 
-function scrollQuestionStart(_: ToolProps<typeof QuestionTool>): string {
+function scrollQuestionStart(_: ToolProps<QuestionTool>): string {
   return ""
 }
 
-function scrollQuestionFinal(p: ToolProps<typeof QuestionTool>): string {
+function scrollQuestionFinal(p: ToolProps<QuestionTool>): string {
   const q = p.input.questions ?? []
   const a = p.metadata.answers ?? []
   const time = span(p.frame.state)

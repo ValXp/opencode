@@ -108,7 +108,6 @@ export const Plugin = define({
     const defaults: PermissionV2.Ruleset = [
       { action: "*", resource: "*", effect: "allow" },
       ...readonlyExternalDirectory,
-      { action: "question", resource: "*", effect: "deny" },
       { action: "plan_enter", resource: "*", effect: "deny" },
       { action: "plan_exit", resource: "*", effect: "deny" },
       { action: "read", resource: "*", effect: "allow" },
@@ -124,7 +123,6 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
             { action: "plan_enter", resource: "*", effect: "allow" },
           ]),
         )
@@ -135,7 +133,6 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
             { action: "plan_exit", resource: "*", effect: "allow" },
             { action: "external_directory", resource: path.join(Global.Path.data, "plans", "*"), effect: "allow" },
             { action: "edit", resource: "*", effect: "deny" },
@@ -153,7 +150,7 @@ export const Plugin = define({
         item.description =
           "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
         item.mode = "subagent"
-        item.permissions.push(...PermissionV2.merge(defaults, [{ action: "todowrite", resource: "*", effect: "deny" }]))
+        item.permissions.push(...defaults)
       })
 
       draft.update(AgentV2.ID.make("explore"), (item) => {

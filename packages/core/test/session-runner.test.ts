@@ -2859,7 +2859,7 @@ describe("SessionRunnerLLM", () => {
       const registry = yield* ToolRegistry.Service
       const questions = yield* QuestionV2.Service
       yield* registry.register({
-        question: Tool.make({
+        ask_user: Tool.make({
           description: "Ask the user",
           input: Schema.Struct({}),
           output: Schema.Struct({}),
@@ -2873,7 +2873,7 @@ describe("SessionRunnerLLM", () => {
       responses = [
         [
           LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-question", name: "question", input: {} }),
+          LLMEvent.toolCall({ id: "call-question", name: "ask_user", input: {} }),
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],

@@ -1,9 +1,9 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { ReservedTools } from "@opencode-ai/core/tool/reserved"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
-import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -11,7 +11,6 @@ import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
-import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
@@ -39,7 +38,6 @@ import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
-import { Todo } from "../session/todo"
 import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -104,8 +102,6 @@ const layer = Layer.effect(
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
     const read = yield* ReadTool
-    const question = yield* QuestionTool
-    const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -195,19 +191,19 @@ const layer = Layer.effect(
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
-            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+            const name = id === "default" ? namespace : `${namespace}_${id}`
+            if (ReservedTools.has(name)) continue
+            custom.push(fromPlugin(name, def))
           }
         }
 
         const plugins = yield* plugin.list()
         for (const p of plugins) {
           for (const [id, def] of Object.entries(p.tool ?? {})) {
+            if (ReservedTools.has(id)) continue
             custom.push(fromPlugin(id, def))
           }
         }
-
-        yield* config.get()
-        const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -219,11 +215,9 @@ const layer = Layer.effect(
           write: Tool.init(writetool),
           task: Tool.init(task),
           fetch: Tool.init(webfetch),
-          todo: Tool.init(todo),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
-          question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
@@ -233,7 +227,6 @@ const layer = Layer.effect(
           custom,
           builtin: [
             tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
             tool.glob,
@@ -242,7 +235,6 @@ const layer = Layer.effect(
             tool.write,
             tool.task,
             tool.fetch,
-            tool.todo,
             tool.search,
             tool.skill,
             tool.patch,
@@ -258,7 +250,7 @@ const layer = Layer.effect(
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin, ...s.custom] as Tool.Def[]
+      return [...s.builtin, ...s.custom].filter((tool) => !ReservedTools.has(tool.id)) as Tool.Def[]
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -286,7 +278,11 @@ const layer = Layer.effect(
     }) {
       if (!codeMode) return
       const ruleset = Permission.merge(input.agent.permission, input.permission ?? [])
-      const tools = Permission.visibleTools(yield* mcp.tools(), ruleset)
+      const tools = Object.fromEntries(
+        Object.entries(Permission.visibleTools(yield* mcp.tools(), ruleset)).filter(
+          ([name]) => !ReservedTools.has(name),
+        ),
+      )
       if (Object.keys(tools).length === 0) return
       return codeMode.describeCatalog(tools, Object.keys(yield* mcp.clients()).map(McpCatalog.sanitize))
     })
@@ -434,7 +430,6 @@ export const node = LayerNode.make({
     Config.node,
     Plugin.node,
     Question.node,
-    Todo.node,
     Agent.node,
     Skill.node,
     Session.node,

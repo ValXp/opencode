@@ -38,7 +38,6 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
     legacy: bool("OPENCODE_EXPERIMENTAL_PARALLEL"),
   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
   enableExperimentalModels: bool("OPENCODE_ENABLE_EXPERIMENTAL_MODELS"),
-  enableQuestionTool: bool("OPENCODE_ENABLE_QUESTION_TOOL"),
   experimentalReferences: enabledByExperimental("OPENCODE_EXPERIMENTAL_REFERENCES"),
   experimentalBackgroundSubagents: enabledByExperimental("OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
   agentRunModelSummaries: bool("OPENCODE_AGENT_RUN_MODEL_SUMMARIES"),

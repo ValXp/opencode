@@ -8,6 +8,7 @@ import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
+import { ReservedTools } from "@opencode-ai/core/tool/reserved"
 
 export const CODE_MODE_TOOL = "execute"
 
@@ -39,7 +40,9 @@ type CatalogEntry = {
 function groupByServer(mcpTools: Record<string, MCP.McpTool>, servers: readonly string[]): Map<string, CatalogEntry[]> {
   const byLongest = [...servers].sort((a, b) => b.length - a.length)
   const groups = new Map<string, CatalogEntry[]>()
-  for (const key of Object.keys(mcpTools).sort((a, b) => a.localeCompare(b))) {
+  for (const key of Object.keys(mcpTools)
+    .filter((key) => !ReservedTools.has(key))
+    .sort((a, b) => a.localeCompare(b))) {
     const server =
       byLongest.find((name) => key.startsWith(name + "_")) ?? (key.includes("_") ? key.slice(0, key.indexOf("_")) : key)
     const local = server && key.startsWith(server + "_") ? key.slice(server.length + 1) : key
