@@ -964,6 +964,14 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .status(400, undefined, "none"),
+  http.protected.get("/api/agent-run", "v2.session.agentRunOverview").json(200, object, "none"),
+  http.protected
+    .get("/api/session/{sessionID}/agent-run", "v2.session.agentRun")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/agent-run", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected.get("/api/session/active", "v2.session.active").json(200, data(object), "none"),
   http.protected
     .post("/api/session", "v2.session.create")
