@@ -6,18 +6,11 @@
 
 ## Local OpenCode Server
 
-- On this host, `opencode.service` is a **user** systemd unit at `~/.config/systemd/user/opencode.service`. Use `systemctl --user`, not plain `systemctl`; running as root does not change the service's scope. Recheck the scope on other hosts.
-- Before restarting, run `systemctl --user show opencode.service --property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp`. Confirm `MainPID` matches the intended server and record the PID/start time. If checking both system and user managers, keep their output separate and do not hide failures with `|| true`.
-- When asked to restart the server hosting the current session, schedule the restart outside its process so the reply can finish. Both the scheduler and restart command must use the correct scope. For this host:
-
-  ```sh
-  systemd-run --user --unit="opencode-restart-$(date +%s)" \
-    --on-active=10s --timer-property=AccuracySec=1s \
-    /usr/bin/systemctl --user restart opencode.service
-  ```
-
-- Timer creation proves only that a restart is **scheduled**. After reconnecting, verify the service is active/running and its PID/start time changed before reporting it **restarted**. If it failed, inspect the job's status/journal in the same systemd scope.
-- A global model default and an existing session's selected model are separate. Verify the running server's resolved default after a model change; a fresh CLI config check or an old session's model label alone does not prove whether the server restarted.
+- On this host, the live `opencode.service` is a **system** unit under `/etc/systemd/system`; the user unit was not found via `systemctl --user --machine=root@.host show`. Use system-scoped `systemctl` and `systemd-run`, without `--user`. Recheck scope on other hosts.
+- For an authorized local deployment, run `bash packages/opencode/script/deploy-local.sh`. It schedules a detached system timer for 15 seconds later; `--run` is internal job mode. Do not restart directly or run the smoke test unless deployment/model use is authorized.
+- The script locks `/root/opencode-rollback`, records the old PID/start time, checks the executable path, and snapshots `/proc/$PID/exe` plus the on-disk candidate before atomic replacement. Never use the on-disk binary as the rollback source: the running executable may be an older deleted inode.
+- It verifies the restarted process hash and health, then creates a fresh real session against `http://127.0.0.1:80` with no model/agent/variant/session overrides, exercising server defaults. Any failure after replacement triggers binary restoration, restart, and hash/health verification. Database migrations, configuration, and session side effects are **not** reverted; rollback can fail and require manual recovery.
+- Timer creation proves only **scheduled**, not deployed. After reconnecting, inspect the system job journal and the per-run `deploy.log`, `before.txt`, executable snapshots, and smoke output under `/root/opencode-rollback`. Report success only after verification; an existing session's model label does not prove the server default.
 
 ## Branch Names
 
