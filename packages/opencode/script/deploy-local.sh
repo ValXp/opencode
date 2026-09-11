@@ -68,20 +68,44 @@ install_binary() {
 }
 
 verify() {
-  local expected=$1 previous=$2 pid executable
+  local expected=$1 previous=$2 pid executable actual attempt failure
   for ((attempt=0; attempt<30; attempt++)); do
-    pid=$(systemctl "${scope[@]}" show "$service" --property=MainPID --value) || return
-    if [[ $pid =~ ^[1-9][0-9]*$ && $pid != "$previous" ]] && systemctl "${scope[@]}" is-active --quiet "$service"; then
-      executable=$(readlink "/proc/$pid/exe") || return
-      [[ $executable == "$target" ]] || return 1
-      [[ $(hash "/proc/$pid/exe") == "$expected" ]] || return 1
-      if curl --fail --silent --show-error --max-time 2 "$url/global/health" | jq -e '.healthy == true' >/dev/null; then
-        systemctl "${scope[@]}" show "$service" --property=MainPID,ExecMainStartTimestamp
-        return 0
-      fi
+    if ! pid=$(systemctl "${scope[@]}" show "$service" --property=MainPID --value); then
+      failure='systemctl MainPID query failed'
+    elif [[ ! $pid =~ ^[1-9][0-9]*$ || $pid == "$previous" ]]; then
+      failure="MainPID=$pid is not a new running process (previous=$previous)"
+    elif ! systemctl "${scope[@]}" is-active --quiet "$service"; then
+      failure="service is not active (PID=$pid)"
+    elif ! executable=$(readlink "/proc/$pid/exe"); then
+      failure="cannot read executable link for PID=$pid"
+    elif [[ $executable != "$target" ]]; then
+      failure="PID=$pid executable=$executable; expected=$target"
+    elif ! actual=$(hash "/proc/$pid/exe"); then
+      failure="cannot hash executable for PID=$pid"
+    elif [[ $actual != "$expected" ]]; then
+      failure="PID=$pid executable hash=$actual; expected=$expected"
+    elif ! curl --fail --silent --show-error --max-time 2 "$url/global/health" | jq -e '.healthy == true' >/dev/null; then
+      failure="API health check failed (PID=$pid)"
+    elif ! systemctl "${scope[@]}" show "$service" --property=MainPID,ExecMainStartTimestamp; then
+      failure="systemctl process details query failed (PID=$pid)"
+    else
+      return 0
     fi
-    sleep 1
+    if (( attempt < 29 )); then sleep 1; fi
   done
+  printf 'Verification exhausted 30 attempts: %s\n' "$failure" >&2
+  return 1
+}
+
+wait_for_callback_api() {
+  local attempt
+  for ((attempt=0; attempt<30; attempt++)); do
+    if curl --fail --silent --show-error --max-time 2 "$url/global/health" | jq -e '.healthy == true' >/dev/null; then
+      return 0
+    fi
+    if (( attempt < 29 )); then sleep 1; fi
+  done
+  printf 'Completion callback API readiness exhausted 30 attempts: health check failed; POST not sent.\n' >&2
   return 1
 }
 
@@ -90,6 +114,7 @@ callback() {
   endpoint=$(jq -nr --arg session "$session" --arg directory "$directory" \
     '"/session/" + ($session | @uri) + "/prompt_async?directory=" + ($directory | @uri)') || return 1
   payload=$(jq -nc --arg text "$text Artifacts: $run" '{parts: [{type: "text", text: $text}]}') || return 1
+  wait_for_callback_api || return 1
   curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
     --request POST --header 'Content-Type: application/json' --data-binary "$payload" \
     --output /dev/null "$url$endpoint" || return 1
@@ -143,16 +168,77 @@ printf 'Old PID=%s start=%s hash=%s\nCandidate hash=%s\n' "$old_pid" "$old_start
 install_binary "$run/candidate"
 timeout --kill-after=10s 60s systemctl "${scope[@]}" restart "$service"
 verify "$candidate_hash" "$old_pid"
+smoke_prompt='Do not use tools. Reply with exactly DEPLOY_SMOKE_OK and nothing else.'
 timeout --kill-after=10s 180s "$target" run --attach "$url" --dir /root --format json --title deploy-smoke \
-  'Do not use tools. Reply with exactly DEPLOY_SMOKE_OK and nothing else.' \
+  "$smoke_prompt" \
   </dev/null >"$run/smoke.jsonl" 2>"$run/smoke.stderr"
-jq -se '
-  length > 0 and
-  all(.[]; .type != "error" and .type != "tool_use") and
-  ([.[].sessionID] | unique | length == 1) and
-  all(.[]; (.sessionID | type) == "string" and (.sessionID | length) > 0) and
-  ([.[] | select(.type == "text") | .part.text] | join("") == "DEPLOY_SMOKE_OK") and
-  ([.[] | select(.type == "step_finish")] | length > 0 and all(.[]; .part.reason == "stop"))
-' "$run/smoke.jsonl" >/dev/null
+smoke_session=$(jq -ser '
+  if length > 0 and
+    all(.[];
+      (type == "object") and
+      ((.sessionID | type) == "string") and
+      (.sessionID | startswith("ses")) and
+      .type != "error" and
+      .type != "tool_use"
+    ) and
+    ([.[].sessionID] | unique | length == 1)
+  then .[0].sessionID
+  else error("invalid smoke event stream")
+  end
+' "$run/smoke.jsonl")
+smoke_endpoint=$(jq -nr --arg session "$smoke_session" --arg directory /root \
+  '"/session/" + ($session | @uri) + "/message?directory=" + ($directory | @uri)')
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+  --output "$run/smoke.messages.json" "$url$smoke_endpoint"
+jq -e --arg session "$smoke_session" --arg prompt "\"$smoke_prompt\"" '
+  . as $messages |
+  if (($messages | type) != "array") or (($messages | length) != 2) then false
+  elif all($messages[];
+    (type == "object") and
+    ((.info | type) == "object") and
+    ((.parts | type) == "array") and
+    ((.info.id | type) == "string") and
+    (.info.id | length > 0) and
+    .info.sessionID == $session and
+    all(.parts[];
+      (type == "object") and
+      ((.type | type) == "string")
+    )
+  ) | not then false
+  else
+    [$messages[] | select(.info.role == "user")] as $users |
+    [$messages[] | select(.info.role == "assistant")] as $assistants |
+    if (($users | length) != 1) or (($assistants | length) != 1) then false
+    else
+      $users[0] as $user |
+      $assistants[0] as $assistant |
+      [$assistant.parts[] | select(.type == "text")] as $texts |
+      [$assistant.parts[] | select(.type == "step-finish")] as $finishes |
+      ($assistant.info.id != $user.info.id) and
+      ($assistant.info.parentID == $user.info.id) and
+      ($assistant.info.error == null) and
+      (($assistant.info.time | type) == "object") and
+      (($assistant.info.time.completed | type) == "number") and
+      ($assistant.info.finish == "stop") and
+      ($user.parts | length == 1) and
+      ($user.parts[0].type == "text") and
+      ($user.parts[0].text == $prompt) and
+      all($messages[];
+        . as $message |
+        all($message.parts[];
+          .sessionID == $session and
+          .messageID == $message.info.id and
+          .type != "tool"
+        )
+      ) and
+      ($texts | length == 1) and
+      ($texts[0].text == "DEPLOY_SMOKE_OK") and
+      (($texts[0].time | type) == "object") and
+      (($texts[0].time.end | type) == "number") and
+      ($finishes | length == 1) and
+      ($finishes[0].reason == "stop")
+    end
+  end
+' "$run/smoke.messages.json" >/dev/null
 verify "$candidate_hash" "$old_pid"
 printf 'Deployment verified: fresh default-model session completed.\n'
