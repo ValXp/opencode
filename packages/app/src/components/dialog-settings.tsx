@@ -1,4 +1,4 @@
-import { Component, createSignal, startTransition } from "solid-js"
+import { Component, createMemo, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -10,12 +10,27 @@ import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsServers } from "./settings-servers"
+import { useLayout } from "@/context/layout"
+import { useTabs } from "@/context/tabs"
+import { useServerSync } from "@/context/server-sync"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const dialog = useDialog()
+  const layout = useLayout()
+  const tabs = useTabs()
+  const serverSync = useServerSync()
   const [tab, setTab] = createSignal(props.defaultValue ?? "general")
+  const directory = createMemo(() => {
+    const route = layout.route()
+    if (route.type === "dir-new-sesssion") return route.dir
+    if (route.type === "draft") {
+      const draft = tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)
+      return draft?.type === "draft" ? draft.directory : undefined
+    }
+    if (route.type === "session") return serverSync().session.get(route.sessionId)?.directory
+  })
 
   const showProviders = () => {
     void dialog.show(() => <DialogSettings defaultValue="providers" />)
@@ -83,7 +98,7 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
           <SettingsServers />
         </Tabs.Content>
         <Tabs.Content value="providers" class="no-scrollbar">
-          <SettingsProviders onBack={showProviders} />
+          <SettingsProviders directory={directory} onBack={showProviders} />
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />

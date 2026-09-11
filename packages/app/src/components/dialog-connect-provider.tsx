@@ -38,6 +38,7 @@ import { useSettings } from "@/context/settings"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { CustomProviderForm } from "./dialog-custom-provider"
 import { decode64 } from "@/utils/base64"
+import { invalidateCodexUsage } from "@/utils/codex-usage"
 
 const CUSTOM_ID = "_custom"
 type ConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }>
@@ -719,6 +720,7 @@ function ProviderConnection(props: {
     await serverSync()
       .refreshProviders()
       .catch(() => undefined)
+    if (props.provider === "openai") invalidateCodexUsage()
     dialog.close()
     showToast({
       variant: "success",

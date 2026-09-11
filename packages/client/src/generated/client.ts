@@ -48,6 +48,8 @@ import type {
   ProvidersListOutput,
   ProvidersGetInput,
   ProvidersGetOutput,
+  IntegrationsCodexUsageInput,
+  IntegrationsCodexUsageOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -567,6 +569,18 @@ export function make(options: ClientOptions) {
         ),
     },
     integrations: {
+      codexUsage: (input?: IntegrationsCodexUsageInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsCodexUsageOutput>(
+          {
+            method: "GET",
+            path: `/api/integration/openai/usage`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
       list: (input?: IntegrationsListInput, requestOptions?: RequestOptions) =>
         request<IntegrationsListOutput>(
           {

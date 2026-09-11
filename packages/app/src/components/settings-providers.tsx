@@ -4,7 +4,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@/utils/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
-import { createMemo, type Component, For, Show } from "solid-js"
+import { type Accessor, createMemo, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -12,6 +12,8 @@ import { DialogConnectProvider, useProviderConnectController } from "./dialog-co
 import { DialogCustomProvider } from "./dialog-custom-provider"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
+import { CodexUsageIndicator } from "./codex-usage"
+import { invalidateCodexUsage } from "@/utils/codex-usage"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
@@ -27,15 +29,19 @@ const PROVIDER_NOTES = [
   { match: (id: string) => id === "vercel", key: "dialog.provider.vercel.note" },
 ] as const
 
-export const SettingsProviders: Component<{ onBack?: () => void }> = (props) => {
+export const SettingsProviders: Component<{ directory: Accessor<string | undefined>; onBack?: () => void }> = (
+  props,
+) => {
   return (
     <SettingsServerScope>
-      <SettingsProvidersContent onBack={props.onBack} />
+      <SettingsProvidersContent directory={props.directory} onBack={props.onBack} />
     </SettingsServerScope>
   )
 }
 
-const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => {
+const SettingsProvidersContent: Component<{ directory: Accessor<string | undefined>; onBack?: () => void }> = (
+  props,
+) => {
   const dialog = useDialog()
   const language = useLanguage()
   const serverSDK = useServerSDK()
@@ -131,6 +137,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
     await serverSDK()
       .client.auth.remove({ providerID })
       .then(async () => {
+        if (providerID === "openai") invalidateCodexUsage()
         await serverSDK().client.global.dispose()
         showToast({
           variant: "success",
@@ -185,6 +192,9 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
                       <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
                         {language.t("common.disconnect")}
                       </Button>
+                    </Show>
+                    <Show when={item.id === "openai"}>
+                      <CodexUsageIndicator directory={props.directory()} />
                     </Show>
                   </div>
                 )}

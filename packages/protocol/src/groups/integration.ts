@@ -1,4 +1,5 @@
 import { Integration } from "@opencode-ai/schema/integration"
+import { CodexUsage } from "@opencode-ai/schema/codex-usage"
 import { Location } from "@opencode-ai/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -8,6 +9,21 @@ import { LocationQuery, locationQueryOpenApi } from "./location"
 const Inputs = Schema.Record(Schema.String, Schema.String)
 
 export const IntegrationGroup = HttpApiGroup.make("server.integration")
+  .add(
+    HttpApiEndpoint.get("integration.codexUsage", "/api/integration/openai/usage", {
+      query: LocationQuery,
+      success: Location.response(CodexUsage.Info),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.integration.codexUsage",
+          summary: "Get Codex subscription usage",
+          description:
+            "Read cached, sanitized ChatGPT quota for the current OAuth connection. Unavailable data is reported as unknown.",
+        }),
+      ),
+  )
   .add(
     HttpApiEndpoint.get("integration.list", "/api/integration", {
       query: LocationQuery,

@@ -667,6 +667,14 @@ const scenarios: Scenario[] = [
   http.protected.get("/api/model", "v2.model.list").json(200, locationData(array)),
   http.protected.get("/api/provider", "v2.provider.list").json(200, locationData(array)),
   http.protected.get("/api/integration", "v2.integration.list").json(200, locationData(array)),
+  http.protected.get("/api/integration/openai/usage", "v2.integration.codexUsage").json(
+    200,
+    locationData((value) => {
+      object(value)
+      check(value.status === "unsupported", "Codex usage should report unsupported without OAuth")
+      array(value.windows)
+    }),
+  ),
   http.protected
     .get("/api/integration/{integrationID}", "v2.integration.get")
     .at((ctx) => ({

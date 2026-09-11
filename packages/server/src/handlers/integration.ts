@@ -1,6 +1,8 @@
 import { Integration } from "@opencode-ai/core/integration"
+import { CodexUsage } from "@opencode-ai/core/codex-usage"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpEffect, HttpServerResponse } from "effect/unstable/http"
 import { Api } from "../api"
 import { InvalidRequestError } from "@opencode-ai/protocol/errors"
 import { response } from "../location"
@@ -19,6 +21,16 @@ const authorize = <A, R>(effect: Effect.Effect<A, Integration.AuthorizationError
 export const IntegrationHandler = HttpApiBuilder.group(Api, "server.integration", (handlers) =>
   Effect.gen(function* () {
     return handlers
+      .handle(
+        "integration.codexUsage",
+        Effect.fn(function* () {
+          yield* HttpEffect.appendPreResponseHandler((_request, result) =>
+            Effect.succeed(HttpServerResponse.setHeader(result, "cache-control", "no-store")),
+          )
+          const service = yield* CodexUsage.Service
+          return yield* response(service.read())
+        }),
+      )
       .handle(
         "integration.list",
         Effect.fn(function* () {

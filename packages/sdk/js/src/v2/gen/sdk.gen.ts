@@ -287,6 +287,8 @@ import type {
   V2IntegrationAttemptCompleteResponses,
   V2IntegrationAttemptStatusErrors,
   V2IntegrationAttemptStatusResponses,
+  V2IntegrationCodexUsageErrors,
+  V2IntegrationCodexUsageResponses,
   V2IntegrationConnectKeyErrors,
   V2IntegrationConnectKeyResponses,
   V2IntegrationConnectOauthErrors,
@@ -6209,6 +6211,32 @@ export class Attempt extends HeyApiClient {
 }
 
 export class Integration extends HeyApiClient {
+  /**
+   * Get Codex subscription usage
+   *
+   * Read cached, sanitized ChatGPT quota for the current OAuth connection. Unavailable data is reported as unknown.
+   */
+  public codexUsage<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<
+      V2IntegrationCodexUsageResponses,
+      V2IntegrationCodexUsageErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/openai/usage",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List integrations
    *

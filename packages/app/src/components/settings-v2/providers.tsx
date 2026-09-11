@@ -11,6 +11,8 @@ import { useServerSync } from "@/context/server-sync"
 import { DialogConnectProvider, useProviderConnectController } from "../dialog-connect-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
 import { SettingsListV2 } from "./parts/list"
+import { CodexUsageIndicator } from "../codex-usage"
+import { invalidateCodexUsage } from "@/utils/codex-usage"
 import "./settings-v2.css"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
@@ -128,6 +130,7 @@ export const SettingsProvidersV2: Component<{
     await serverSdk()
       .client.auth.remove({ providerID })
       .then(async () => {
+        if (providerID === "openai") invalidateCodexUsage()
         await serverSdk().client.global.dispose()
         showToast({
           variant: "success",
@@ -168,9 +171,14 @@ export const SettingsProvidersV2: Component<{
                         height={PROVIDER_ICON_SIZE}
                         class="settings-v2-provider-icon shrink-0"
                       />
-                      <div class="settings-v2-provider-main">
-                        <span class="settings-v2-provider-name truncate">{item.name}</span>
-                        <Tag>{type(item)}</Tag>
+                      <div class="settings-v2-provider-copy">
+                        <div class="settings-v2-provider-main">
+                          <span class="settings-v2-provider-name truncate">{item.name}</span>
+                          <Tag>{type(item)}</Tag>
+                        </div>
+                        <Show when={item.id === "openai"}>
+                          <CodexUsageIndicator directory={props.directory()} />
+                        </Show>
                       </div>
                     </div>
                     <Show

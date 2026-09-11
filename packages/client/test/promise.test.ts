@@ -26,6 +26,7 @@ test("exposes every standard HTTP API group", () => {
   ])
   expect(Object.keys(client.messages)).toEqual(["list"])
   expect(Object.keys(client.integrations)).toEqual([
+    "codexUsage",
     "list",
     "get",
     "connectKey",
@@ -52,6 +53,22 @@ test("sessions.get returns the wire projection", async () => {
   const result = await client.sessions.get({ sessionID: "ses_test" })
 
   expect(result.time.created).toBe(1_717_171_717_000)
+})
+
+test("Codex usage uses the current API surface", async () => {
+  const data = {
+    status: "fresh",
+    updatedAt: 123,
+    windows: [{ kind: "primary", remainingPercent: 73, windowSeconds: 18000, resetAt: 2000000000000 }],
+  } as const
+  const client = OpenCode.make({
+    baseUrl: "http://localhost:3000",
+    fetch: async (input) => {
+      expect(String(input)).toBe("http://localhost:3000/api/integration/openai/usage")
+      return Response.json({ location: { directory: "/tmp", project: { id: "global", directory: "/tmp" } }, data })
+    },
+  })
+  expect((await client.integrations.codexUsage()).data).toEqual(data)
 })
 
 test("events.subscribe exposes the Promise event stream wire projection", async () => {

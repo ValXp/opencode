@@ -4964,6 +4964,22 @@ export type ProviderV2Info = {
   request: ProviderRequest
 }
 
+export type CodexUsageWindow = {
+  kind: "primary" | "secondary"
+  remainingPercent: number
+  windowSeconds: number
+  resetAt?: number
+}
+
+export type CodexUsageInfo = {
+  status: "unsupported" | "unknown" | "fresh" | "stale"
+  updatedAt?: number
+  planType?: string
+  allowed?: boolean
+  limitReached?: boolean
+  windows: Array<CodexUsageWindow>
+}
+
 export type IntegrationWhen = {
   key: string
   op: "eq" | "neq"
@@ -12338,6 +12354,43 @@ export type V2ProviderGetResponses = {
 }
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
+
+export type V2IntegrationCodexUsageData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/integration/openai/usage"
+}
+
+export type V2IntegrationCodexUsageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2IntegrationCodexUsageError = V2IntegrationCodexUsageErrors[keyof V2IntegrationCodexUsageErrors]
+
+export type V2IntegrationCodexUsageResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: CodexUsageInfo
+  }
+}
+
+export type V2IntegrationCodexUsageResponse = V2IntegrationCodexUsageResponses[keyof V2IntegrationCodexUsageResponses]
 
 export type V2IntegrationListData = {
   body?: never

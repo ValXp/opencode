@@ -1,4 +1,17 @@
 export const FEATURE_ENGLISH_FALLBACK = {
+  "settings.providers.codexUsage.title": "Codex subscription usage",
+  "settings.providers.codexUsage.compact": "Codex {{percent}}% remaining",
+  "settings.providers.codexUsage.compactStale": "Codex {{percent}}% · stale",
+  "settings.providers.codexUsage.compactUnknown": "Codex —",
+  "settings.providers.codexUsage.minimum": "Shows the lowest remaining percentage across windows.",
+  "settings.providers.codexUsage.lastKnown": "Last known usage · may be out of date",
+  "settings.providers.codexUsage.weekly": "{{percent}}% remaining · weekly window",
+  "settings.providers.codexUsage.remaining": "{{percent}}% remaining · {{hours}}h window",
+  "settings.providers.codexUsage.reset": "Resets {{time}}",
+  "settings.providers.codexUsage.resetUnknown": "Reset time unavailable",
+  "settings.providers.codexUsage.unknown": "Usage unavailable",
+  "settings.providers.codexUsage.stale": "Last known usage · updated {{time}}",
+  "settings.providers.codexUsage.limited": "Subscription limit reached or access unavailable",
   "settings.general.row.powerSavings.title": "Power saving mode",
   "settings.general.row.powerSavings.description":
     "Reduces GPU-heavy visual effects and background rendering activity in the browser.",

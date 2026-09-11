@@ -226,7 +226,7 @@ function refresh(methodID: Integration.MethodID, value: Pick<Credential.OAuth, "
 function request<A>(url: string, init: RequestInit) {
   return Effect.tryPromise({
     try: async (signal) => {
-      const response = await fetch(url, { ...init, signal })
+      const response = await fetch(url, { ...init, redirect: "error", signal })
       if (!response.ok) throw new Error(`Request failed: ${response.status}`)
       return response.json() as Promise<A>
     },

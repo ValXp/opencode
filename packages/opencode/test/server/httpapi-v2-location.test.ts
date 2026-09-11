@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Location } from "@opencode-ai/core/location"
+import { CodexUsage } from "@opencode-ai/schema/codex-usage"
 import { Context, Schema } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
@@ -78,6 +79,44 @@ afterEach(async () => {
 })
 
 describe("v2 location HttpApi", () => {
+  test("opencode serve mounts the Codex quota endpoint alongside the web UI", async () => {
+    await using tmp = await tmpdir({ git: true })
+    // Exercise the complete route tree used by Server.listen, including the UI catch-all.
+    const response = await request("/api/integration/openai/usage", tmp.path)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    const body = Schema.decodeUnknownSync(Location.response(CodexUsage.Info))(await response.json())
+    expect(String(body.location.directory)).toBe(tmp.path)
+    expect(body.data).toEqual({ status: "unsupported", windows: [] })
+  })
+
+  test("hybrid serve quota follows legacy OAuth logout and reconnection", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const usage = async () => {
+      const response = await request("/api/integration/openai/usage", tmp.path)
+      expect(response.status).toBe(200)
+      return Schema.decodeUnknownSync(Location.response(CodexUsage.Info))(await response.json()).data
+    }
+    const connect = (refresh: string) =>
+      request("/auth/openai", tmp.path, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "oauth", access: "not-a-jwt", refresh, expires: Date.now() + 60000 }),
+      })
+
+    try {
+      expect((await connect("refresh-a")).status).toBe(200)
+      expect(await usage()).toEqual({ status: "unknown", windows: [] })
+      expect((await request("/auth/openai", tmp.path, { method: "DELETE" })).status).toBe(200)
+      expect(await usage()).toEqual({ status: "unsupported", windows: [] })
+      expect((await connect("refresh-b")).status).toBe(200)
+      expect(await usage()).toEqual({ status: "unknown", windows: [] })
+    } finally {
+      await request("/auth/openai", tmp.path, { method: "DELETE" })
+    }
+  })
+
   test("decodes EventV2 location refs without resolved project metadata", () => {
     expect(
       Schema.decodeUnknownSync(Event)({

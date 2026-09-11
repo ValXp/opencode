@@ -12,11 +12,13 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
+const OAUTH_REFRESH_TIMEOUT_MS = 15_000
 const CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
 const CODEX_CLI_ORIGINATOR = "codex_cli_rs"
 const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
 const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
 const GPT_5_6_CODEX_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
+type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 interface PkceCodes {
   verifier: string
@@ -127,10 +129,34 @@ interface TokenResponse {
   expires_in?: number
 }
 
+export interface CodexOAuthCredential {
+  readonly refresh: string
+  readonly access: string
+  readonly expires: number
+  readonly accountId?: string
+}
+
+interface RefreshCommit {
+  readonly signal: AbortSignal
+  readonly deadline: number
+}
+
+const refreshes = new Map<string, Promise<CodexOAuthCredential | undefined>>()
+
+function waitForSignal<A>(pending: Promise<A>, signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<A>((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener("abort", abort, { once: true })
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
+  })
+}
+
 interface CodexAuthPluginOptions {
   issuer?: string
   codexApiEndpoint?: string
   experimentalWebSockets?: boolean
+  updateOAuth?: (expectedRefresh: string, credential: CodexOAuthCredential, commit: RefreshCommit) => Promise<boolean>
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
@@ -151,20 +177,96 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
   return response.json()
 }
 
-async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promise<TokenResponse> {
-  const response = await fetch(`${issuer}/oauth/token`, {
+async function refreshAccessToken(
+  refreshToken: string,
+  issuer = ISSUER,
+  fetcher: Fetch = fetch,
+  signal?: AbortSignal,
+): Promise<TokenResponse> {
+  const response = await fetcher(`${issuer}/oauth/token`, {
     method: "POST",
+    redirect: "error",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: CLIENT_ID,
     }).toString(),
+    signal,
   })
   if (!response.ok) {
     throw new Error(`Token refresh failed: ${response.status}`)
   }
   return response.json()
+}
+
+export async function resolveCodexOAuth(input: {
+  get: () => Promise<CodexOAuthCredential | undefined>
+  set: (expectedRefresh: string, credential: CodexOAuthCredential, commit: RefreshCommit) => Promise<boolean>
+  issuer?: string
+  fetch?: Fetch
+  now?: () => number
+  signal?: AbortSignal
+  refreshTimeoutMs?: number
+}) {
+  const deadline = Date.now() + (input.refreshTimeoutMs ?? OAUTH_REFRESH_TIMEOUT_MS)
+  const request = new AbortController()
+  const timeout = setTimeout(
+    () => request.abort(new Error("Token refresh timed out")),
+    Math.max(0, deadline - Date.now()),
+  )
+  const signal = input.signal ? AbortSignal.any([request.signal, input.signal]) : request.signal
+  try {
+    const current = await waitForSignal(input.get(), signal)
+    if (!current) return
+    const accountId =
+      current.accountId ??
+      extractAccountId({
+        id_token: "",
+        access_token: current.access,
+        refresh_token: current.refresh,
+      })
+    if (current.access && current.expires >= (input.now?.() ?? Date.now())) return { ...current, accountId }
+
+    let pending = refreshes.get(current.refresh)
+    if (!pending) {
+      const controller = new AbortController()
+      const sharedTimeout = setTimeout(
+        () => controller.abort(new Error("Token refresh timed out")),
+        Math.max(0, deadline - Date.now()),
+      )
+      const transaction = (async () => {
+        const tokens = await refreshAccessToken(current.refresh, input.issuer, input.fetch, controller.signal)
+        if (controller.signal.aborted) return
+        const latest = await input.get()
+        if (controller.signal.aborted || !latest || latest.refresh !== current.refresh) return
+        const next = {
+          refresh: tokens.refresh_token,
+          access: tokens.access_token,
+          expires: (input.now?.() ?? Date.now()) + (tokens.expires_in ?? 3600) * 1000,
+          accountId: extractAccountId(tokens) ?? latest.accountId ?? accountId,
+        }
+        if (
+          controller.signal.aborted ||
+          !(await input.set(current.refresh, next, { signal: controller.signal, deadline })) ||
+          controller.signal.aborted
+        )
+          return
+        return next
+      })()
+      const aborted = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true })
+      })
+      pending = Promise.race([transaction, aborted]).finally(() => {
+        clearTimeout(sharedTimeout)
+        if (refreshes.get(current.refresh) === pending) refreshes.delete(current.refresh)
+      })
+      refreshes.set(current.refresh, pending)
+    }
+    return await waitForSignal(pending, signal)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 // Kept as a named export for plugin.codex tests; delegates to the shared branded page.
@@ -357,13 +459,6 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
         }
         if (auth.type !== "oauth") return websocketFetch ? { fetch: websocketFetch } : {}
 
-        let refreshPromise:
-          | Promise<{
-              access: string
-              accountId: string | undefined
-            }>
-          | undefined
-
         return {
           apiKey: OAUTH_DUMMY_KEY,
           async fetch(requestInput: RequestInfo | URL, init?: RequestInit) {
@@ -379,41 +474,21 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
               }
             }
 
-            const currentAuth = await getAuth()
-            if (currentAuth.type !== "oauth")
-              return websocketFetch ? websocketFetch(requestInput, init) : fetch(requestInput, init)
-
-            const authWithAccount = currentAuth as typeof currentAuth & { accountId?: string }
-
-            if (!currentAuth.access || currentAuth.expires < Date.now()) {
-              if (!refreshPromise) {
-                refreshPromise = refreshAccessToken(currentAuth.refresh, issuer)
-                  .then(async (tokens) => {
-                    const accountId = extractAccountId(tokens) || authWithAccount.accountId
-                    await input.client.auth.set({
-                      path: { id: "openai" },
-                      body: {
-                        type: "oauth",
-                        refresh: tokens.refresh_token,
-                        access: tokens.access_token,
-                        expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-                        ...(accountId && { accountId }),
-                      },
-                    })
-                    return {
-                      access: tokens.access_token,
-                      accountId,
-                    }
-                  })
-                  .finally(() => {
-                    refreshPromise = undefined
-                  })
-              }
-
-              const refreshed = await refreshPromise
-              currentAuth.access = refreshed.access
-              authWithAccount.accountId = refreshed.accountId
-            }
+            const currentAuth = await resolveCodexOAuth({
+              get: async () => {
+                const value = await getAuth()
+                return value.type === "oauth" ? value : undefined
+              },
+              set: async (expectedRefresh, value, commit) => {
+                if (options.updateOAuth) return options.updateOAuth(expectedRefresh, value, commit)
+                if (commit.signal.aborted || Date.now() >= commit.deadline) return false
+                await input.client.auth.set({ path: { id: "openai" }, body: { type: "oauth", ...value } })
+                return true
+              },
+              issuer,
+              signal: init?.signal ?? (requestInput instanceof Request ? requestInput.signal : undefined),
+            })
+            if (!currentAuth) return websocketFetch ? websocketFetch(requestInput, init) : fetch(requestInput, init)
 
             const headers = new Headers()
             if (init?.headers) {
@@ -430,8 +505,8 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
               }
             }
             headers.set("authorization", `Bearer ${currentAuth.access}`)
-            if (authWithAccount.accountId) {
-              headers.set("ChatGPT-Account-Id", authWithAccount.accountId)
+            if (currentAuth.accountId) {
+              headers.set("ChatGPT-Account-Id", currentAuth.accountId)
             }
 
             const parsed =

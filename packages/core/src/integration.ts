@@ -20,6 +20,7 @@ import { Credential } from "./credential"
 import { State } from "./state"
 import { EventV2 } from "./event"
 import { IntegrationConnection } from "./integration/connection"
+import { KeyedMutex } from "./effect/keyed-mutex"
 
 export const ID = Integration.ID
 export type ID = Integration.ID
@@ -198,6 +199,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/v2
 const attemptLifetime = Duration.toMillis(Duration.minutes(10))
 const terminalRetention = Duration.toMillis(Duration.minutes(1))
 const scrubInterval = Duration.seconds(30)
+// Shared across Location services so quota polling and model execution cannot rotate a token twice.
+const credentialLocks = KeyedMutex.makeUnsafe<Credential.ID>()
 
 type AttemptTime = { created: number; expires: number }
 type PendingAttempt = {
@@ -363,6 +366,30 @@ export const locationLayer = Layer.effect(
 
     yield* scrub().pipe(Effect.repeat(Schedule.spaced(scrubInterval)), Effect.forkIn(scope))
 
+    const resolve: Interface["connection"]["resolve"] = (connection) => {
+      if (connection.type === "env") {
+        const key = process.env[connection.name]
+        return Effect.succeed(key ? Credential.Key.make({ type: "key", key }) : undefined)
+      }
+      return credentialLocks.withLock(connection.id)(
+        Effect.gen(function* () {
+          const credential = yield* credentials.get(connection.id)
+          if (!credential) return undefined
+          if (credential.value.type === "key") return credential.value
+          const implementation = state
+            .get()
+            .integrations.get(credential.integrationID)
+            ?.implementations.get(credential.value.methodID)
+          if (!implementation?.refresh) return credential.value
+          const now = yield* Clock.currentTimeMillis
+          if (credential.value.expires > now + Duration.toMillis(Duration.minutes(5))) return credential.value
+          const value = yield* authorize(implementation.refresh(credential.value))
+          yield* credentials.update(credential.id, { value })
+          return value
+        }),
+      )
+    }
+
     return Service.of({
       transform: state.transform,
       reload: state.reload,
@@ -382,25 +409,7 @@ export const locationLayer = Layer.effect(
           const entry = state.get().integrations.get(id)
           return resolveConnections(entry, yield* credentials.list(id))[0]
         }),
-        resolve: Effect.fn("Integration.connection.resolve")(function* (connection) {
-          if (connection.type === "env") {
-            const key = process.env[connection.name]
-            return key ? Credential.Key.make({ type: "key", key }) : undefined
-          }
-          const credential = yield* credentials.get(connection.id)
-          if (!credential) return undefined
-          if (credential.value.type === "key") return credential.value
-          const implementation = state
-            .get()
-            .integrations.get(credential.integrationID)
-            ?.implementations.get(credential.value.methodID)
-          if (!implementation?.refresh) return credential.value
-          const now = yield* Clock.currentTimeMillis
-          if (credential.value.expires > now + Duration.toMillis(Duration.minutes(5))) return credential.value
-          const value = yield* authorize(implementation.refresh(credential.value))
-          yield* credentials.update(credential.id, { value })
-          return value
-        }),
+        resolve,
         key: Effect.fn("Integration.connection.key")(function* (input) {
           const method = state
             .get()

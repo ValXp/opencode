@@ -3,6 +3,7 @@ import { AgentV2 } from "./agent"
 import { AISDK } from "./aisdk"
 import { Catalog } from "./catalog"
 import { CommandV2 } from "./command"
+import { CodexUsage } from "./codex-usage"
 import { Config } from "./config"
 import { LayerNode } from "./effect/layer-node"
 import { Node } from "./effect/app-node"
@@ -47,6 +48,7 @@ export const locationServices = LayerNode.group([
   CommandV2.node,
   Reference.node,
   Integration.node,
+  CodexUsage.node,
   Catalog.node,
   AISDK.node,
   PluginV2.node,

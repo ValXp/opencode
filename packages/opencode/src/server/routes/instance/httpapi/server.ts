@@ -26,6 +26,8 @@ import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
+import { LegacyCodexUsage } from "@/plugin/openai/codex-usage"
+import { CodexUsage } from "@opencode-ai/core/codex-usage"
 import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
 import { SessionCompaction } from "@/session/compaction"
@@ -277,7 +279,7 @@ const app = LayerNode.group([
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  const locationServiceMapV2 = buildLocationServiceMap()
+  const locationServiceMapV2 = buildLocationServiceMap([[CodexUsage.node, LegacyCodexUsage.node]])
 
   return Layer.mergeAll(
     rootApiRoutes,

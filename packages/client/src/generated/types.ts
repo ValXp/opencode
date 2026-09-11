@@ -2182,6 +2182,33 @@ export type ProvidersGetOutput = {
   }
 }
 
+export type IntegrationsCodexUsageInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type IntegrationsCodexUsageOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: {
+    readonly status: "unsupported" | "unknown" | "fresh" | "stale"
+    readonly updatedAt?: number
+    readonly planType?: string
+    readonly allowed?: boolean
+    readonly limitReached?: boolean
+    readonly windows: ReadonlyArray<{
+      readonly kind: "primary" | "secondary"
+      readonly remainingPercent: number
+      readonly windowSeconds: number
+      readonly resetAt?: number
+    }>
+  }
+}
+
 export type IntegrationsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

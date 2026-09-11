@@ -17,6 +17,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
+import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -34,6 +35,7 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { reviewTooltipKeybind } from "../command-tooltip-keybind"
 import { useTitlebarRightMount } from "../titlebar"
 import { useAgents } from "@/pages/session/agents/context"
+import { CodexUsageIndicator } from "../codex-usage"
 
 const OPEN_APPS = [
   "vscode",
@@ -142,6 +144,7 @@ export function SessionHeader() {
   const layout = useLayout()
   const command = useCommand()
   const server = useServer()
+  const sdk = useSDK()
   const platform = usePlatform()
   const language = useLanguage()
   const settings = useSettings()
@@ -457,6 +460,7 @@ export function SessionHeader() {
                   </Show>
                   <div class="flex items-center gap-1">
                     <SessionHeaderLegacyAgentsAction state={actionsState()} />
+                    <CodexUsageIndicator compact directory={sdk().directory} />
                     <Show when={status()}>
                       <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                         <StatusPopover />
@@ -524,7 +528,7 @@ export function SessionHeader() {
                 </div>
               }
             >
-              <SessionHeaderV2Actions state={actionsState()} />
+              <SessionHeaderV2Actions state={actionsState()} directory={sdk().directory} />
             </Show>
           </Portal>
         )}
@@ -569,7 +573,7 @@ function SessionHeaderLegacyAgentsAction(props: { state: SessionHeaderActionsSta
   )
 }
 
-function SessionHeaderV2Actions(props: { state: SessionHeaderActionsState }) {
+function SessionHeaderV2Actions(props: { state: SessionHeaderActionsState; directory?: string }) {
   return (
     <div class="flex items-center gap-2">
       <TooltipV2 class="shrink-0" placement="bottom" value={props.state.agentsLabel}>
@@ -593,6 +597,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderActionsState }) {
           }
         />
       </TooltipV2>
+      <CodexUsageIndicator compact directory={props.directory} />
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />

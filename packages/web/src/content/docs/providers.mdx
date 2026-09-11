@@ -1801,6 +1801,16 @@ We recommend signing up for [ChatGPT Plus or Pro](https://chatgpt.com/pricing).
 
 For ChatGPT OAuth, OpenCode automatically applies a regional inference residency requirement when one is advertised by your workspace credentials. It forwards the compute residency value from the credential instead of maintaining a fixed list of regions. Data residency at rest does not imply regional inference.
 
+##### Subscription usage
+
+In the web UI served by `opencode serve`, a compact Codex percentage appears beside the Agents button in the session header. It shows the lowest remaining percentage across reported usage windows; its tooltip lists each window and reset time. Open **Settings → Providers** to see the detailed **Codex subscription usage** under OpenAI. This is ChatGPT OAuth subscription quota, separate from a session's context usage.
+
+The normal binary build embeds the web app from `packages/app`. When running from source or using a build without embedded web assets, `opencode serve` instead proxies `app.opencode.ai`; local frontend changes require a binary built with the updated embedded web UI to appear at the server URL.
+
+The indicators refresh about once a minute while the browser tab is visible. If the upstream usage service is unavailable, the last successful reading is marked as last known usage for up to 15 minutes, then becomes unavailable. Missing reset times are shown as unavailable; reaching a reset time does not imply that the quota has already refreshed. API-key connections do not show subscription quota.
+
+Usage comes from an internal ChatGPT endpoint and may be unavailable if that endpoint changes. Credits and model-specific additional limits are not included.
+
 ##### Using API keys
 
 If you already have an API key, you can select **Manually enter API Key** and paste it in your terminal.

@@ -9,7 +9,7 @@ import type {
 import { Config } from "@/config/config"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
-import { CodexAuthPlugin } from "./openai/codex"
+import { CodexAuthPlugin, type CodexOAuthCredential } from "./openai/codex"
 import { Session } from "@/session/session"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
@@ -33,6 +33,7 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { Auth } from "@/auth"
 
 type State = {
   hooks: Hooks[]
@@ -64,12 +65,20 @@ export function experimentalWebSocketsEnabled(input: { enabled: boolean; channel
 }
 
 // Built-in plugins that are directly imported (not installed from npm)
-function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
+function internalPlugins(
+  flags: RuntimeFlags.Info,
+  updateOAuth: (
+    expectedRefresh: string,
+    credential: CodexOAuthCredential,
+    commit: { readonly signal: AbortSignal; readonly deadline: number },
+  ) => Promise<boolean>,
+): PluginInstance[] {
   return [
     // Temporary rollout: pre-release builds use WebSockets by default; releases require explicit opt-in.
     (input) =>
       CodexAuthPlugin(input, {
         experimentalWebSockets: experimentalWebSocketsEnabled({ enabled: flags.experimentalWebSockets }),
+        updateOAuth,
       }),
     CopilotAuthPlugin,
     ModalPlugin,
@@ -130,6 +139,7 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
+    const auth = yield* Auth.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
@@ -167,7 +177,16 @@ const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
-        for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
+        for (const plugin of flags.disableDefaultPlugins
+          ? []
+          : internalPlugins(flags, (expectedRefresh, credential, commit) =>
+              bridge.promise(
+                auth.updateOauth("openai", expectedRefresh, new Auth.Oauth({ type: "oauth", ...credential }), {
+                  deadline: commit.deadline,
+                }),
+                { signal: commit.signal },
+              ),
+            )) {
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
             catch: errorMessage,
@@ -312,7 +331,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Auth.node],
 })
 
 export * as Plugin from "."

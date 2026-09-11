@@ -11,6 +11,56 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Integration.node, Credential.node, EventV2.node])))
 
 describe("Integration", () => {
+  it.effect("shares OAuth refresh between concurrent credential consumers", () =>
+    Effect.gen(function* () {
+      const integrations = yield* Integration.Service
+      const credentials = yield* Credential.Service
+      const integrationID = Integration.ID.make("openai")
+      const methodID = Integration.MethodID.make("chatgpt-browser")
+      const calls = { refresh: 0 }
+      yield* integrations.transform((editor) =>
+        editor.method.update({
+          integrationID,
+          method: { type: "oauth", id: methodID, label: "ChatGPT" },
+          authorize: () => Effect.die("not used"),
+          refresh: (value) =>
+            Effect.gen(function* () {
+              calls.refresh++
+              yield* Effect.yieldNow
+              return Credential.OAuth.make({
+                ...value,
+                access: "new-access",
+                refresh: "new-refresh",
+                expires: Date.now() + 3600000,
+              })
+            }),
+        }),
+      )
+      const saved = yield* credentials.create({
+        integrationID,
+        value: Credential.OAuth.make({
+          type: "oauth",
+          methodID,
+          access: "old-access",
+          refresh: "old-refresh",
+          expires: 0,
+        }),
+      })
+      const values = yield* Effect.all(
+        Array.from({ length: 10 }, () =>
+          integrations.connection.resolve({
+            type: "credential",
+            id: saved.id,
+            label: saved.label,
+          }),
+        ),
+        { concurrency: "unbounded" },
+      )
+      expect(calls.refresh).toBe(1)
+      expect(values.every((value) => value?.type === "oauth" && value.access === "new-access")).toBe(true)
+      expect((yield* credentials.get(saved.id))?.value).toMatchObject({ refresh: "new-refresh" })
+    }),
+  )
   it.effect("registers integrations through the editor", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service
