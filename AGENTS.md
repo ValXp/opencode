@@ -6,11 +6,12 @@
 
 ## Local OpenCode Server
 
-- On this host, the live `opencode.service` is a **system** unit under `/etc/systemd/system`; the user unit was not found via `systemctl --user --machine=root@.host show`. Use system-scoped `systemctl` and `systemd-run`, without `--user`. Recheck scope on other hosts.
-- For an authorized local deployment, run `bash packages/opencode/script/deploy-local.sh`. It schedules a detached system timer for 15 seconds later; `--run` is internal job mode. Do not restart directly or run the smoke test unless deployment/model use is authorized.
+- On this host, the live `opencode.service` is a **user** service; the system unit is not found. Use `systemctl --user` and `systemd-run --user`. Recheck scope on other hosts; the deployment script defaults to system scope for compatibility.
+- For an authorized local deployment on this host, run `bash packages/opencode/script/deploy-local.sh --user`. It schedules a detached user timer for 15 seconds later; `--run` is internal job mode. Do not restart directly or run the smoke test unless deployment/model use is authorized.
+- To wake an explicit existing session after completion, add `--session "$SESSION_ID" --directory "$DIRECTORY"` (both required together). The job makes one bounded legacy `prompt_async` POST with the deployment/rollback result. It does not verify receipt, retry persistently, or replay automatically. Callback failure is logged and does not roll back a successful deployment; omitting both arguments disables the callback.
 - The script locks `/root/opencode-rollback`, records the old PID/start time, checks the executable path, and snapshots `/proc/$PID/exe` plus the on-disk candidate before atomic replacement. Never use the on-disk binary as the rollback source: the running executable may be an older deleted inode.
 - It verifies the restarted process hash and health, then creates a fresh real session against `http://127.0.0.1:80` with no model/agent/variant/session overrides, exercising server defaults. Any failure after replacement triggers binary restoration, restart, and hash/health verification. Database migrations, configuration, and session side effects are **not** reverted; rollback can fail and require manual recovery.
-- Timer creation proves only **scheduled**, not deployed. After reconnecting, inspect the system job journal and the per-run `deploy.log`, `before.txt`, executable snapshots, and smoke output under `/root/opencode-rollback`. Report success only after verification; an existing session's model label does not prove the server default.
+- Timer creation proves only **scheduled**, not deployed. After reconnecting, inspect the matching-scope job journal (`journalctl --user -u "$UNIT"` on this host) and the per-run `deploy.log`, `before.txt`, executable snapshots, and smoke output under `/root/opencode-rollback`. Report success only after verification; an existing session's model label does not prove the server default.
 
 ## Branch Names
 
