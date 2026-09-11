@@ -13,6 +13,7 @@ import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
+import { Worktree } from "@/utils/worktree"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -165,6 +166,15 @@ export function resumeStreamAfterPageShow(event: PageTransitionEvent, start: () 
 }
 
 type ServerEventEmitter = ReturnType<typeof createGlobalEmitter<{ [key: string]: ServerEvent }>>
+
+export function subscribeWorktreeEvents(scope: ServerScope, emitter: ServerEventEmitter, failure: () => string) {
+  return emitter.listen((event) => {
+    if (event.details.type === "worktree.ready") Worktree.ready(scope, event.name)
+    if (event.details.type === "worktree.failed")
+      Worktree.failed(scope, event.name, event.details.properties?.message ?? failure())
+  })
+}
+
 type ServerSDKBase = {
   server: ServerConnection.Any
   scope: ServerScope
@@ -187,6 +197,7 @@ type ServerSDKBase = {
 
 function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerScope): ServerSDKBase {
   const platform = usePlatform()
+  const language = useLanguage()
   const abort = new AbortController()
 
   const eventFetch = (() => {
@@ -214,6 +225,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   const emitter = createGlobalEmitter<{
     [key: string]: ServerEvent
   }>()
+  onCleanup(subscribeWorktreeEvents(scope, emitter, () => language.t("common.requestFailed")))
 
   type Queued = QueuedServerEvent
   const FLUSH_FRAME_MS = 16

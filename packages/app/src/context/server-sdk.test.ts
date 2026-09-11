@@ -1,7 +1,78 @@
 import { describe, expect, test } from "bun:test"
-import { adaptServerEvent, coalesceServerEvents, enqueueServerEvent, resumeStreamAfterPageShow } from "./server-sdk"
+import {
+  adaptServerEvent,
+  coalesceServerEvents,
+  enqueueServerEvent,
+  resumeStreamAfterPageShow,
+  subscribeWorktreeEvents,
+  type ServerEvent,
+} from "./server-sdk"
+import { createGlobalEmitter } from "@solid-primitives/event-bus"
+import { ServerScope } from "@/utils/server-scope"
+import { Worktree } from "@/utils/worktree"
 import type { OpenCodeEvent } from "@opencode-ai/client/promise"
 import type { Event } from "@opencode-ai/sdk/v2/client"
+
+describe("subscribeWorktreeEvents", () => {
+  test("resolves pending worktrees without a layout and isolates server scopes", async () => {
+    const directory = `/tmp/worktree-${crypto.randomUUID()}`
+    const remote = "https://remote.example" as ServerScope
+    const emitter = createGlobalEmitter<{ [key: string]: ServerEvent }>()
+    const unsubscribe = subscribeWorktreeEvents(ServerScope.local, emitter, () => "Request failed")
+    try {
+      Worktree.pending(ServerScope.local, directory)
+      Worktree.pending(remote, directory)
+      const waiting = Worktree.wait(ServerScope.local, directory)
+
+      emitter.emit(directory, { type: "worktree.ready", properties: { name: "test", branch: "test" } } as Event)
+
+      expect(Worktree.get(ServerScope.local, directory)).toEqual({ status: "ready" })
+      expect(await waiting).toEqual({ status: "ready" })
+      expect(Worktree.get(remote, directory)).toEqual({ status: "pending" })
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test("resolves failures with the server message or translated fallback", async () => {
+    const emitter = createGlobalEmitter<{ [key: string]: ServerEvent }>()
+    const unsubscribe = subscribeWorktreeEvents(ServerScope.local, emitter, () => "Echec de la requete")
+    try {
+      for (const message of ["setup failed", undefined]) {
+        const directory = `/tmp/worktree-${crypto.randomUUID()}`
+        Worktree.pending(ServerScope.local, directory)
+        const waiting = Worktree.wait(ServerScope.local, directory)
+
+        emitter.emit(directory, {
+          type: "worktree.failed",
+          properties: { message },
+        } as Event)
+
+        const expected = { status: "failed", message: message ?? "Echec de la requete" } as const
+        expect(Worktree.get(ServerScope.local, directory)).toEqual(expected)
+        expect(await waiting).toEqual(expected)
+      }
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test("ignores unrelated events, preserves early readiness, and unsubscribes", async () => {
+    const directory = `/tmp/worktree-${crypto.randomUUID()}`
+    const emitter = createGlobalEmitter<{ [key: string]: ServerEvent }>()
+    const unsubscribe = subscribeWorktreeEvents(ServerScope.local, emitter, () => "Request failed")
+
+    emitter.emit(directory, { type: "server.connected", properties: {} } as Event)
+    expect(Worktree.get(ServerScope.local, directory)).toBeUndefined()
+    emitter.emit(directory, { type: "worktree.ready", properties: {} } as Event)
+    Worktree.pending(ServerScope.local, directory)
+    expect(await Worktree.wait(ServerScope.local, directory)).toEqual({ status: "ready" })
+
+    unsubscribe()
+    emitter.emit(directory, { type: "worktree.failed", properties: { message: "late failure" } } as Event)
+    expect(Worktree.get(ServerScope.local, directory)).toEqual({ status: "ready" })
+  })
+})
 
 describe("resumeStreamAfterPageShow", () => {
   test("restarts a stream only after a back-forward cache restore", () => {
