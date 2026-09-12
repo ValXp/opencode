@@ -51,6 +51,17 @@ test("rejects unavailable or malformed server responses", async () => {
   }
 })
 
+test("calls the fetch transport without an options-object receiver", async () => {
+  await readCodexUsage({
+    server: { url: "http://localhost" },
+    signal: new AbortController().signal,
+    fetch: async function (this: unknown) {
+      expect(this).toBeUndefined()
+      return Response.json({ data: { status: "unknown", windows: [] } })
+    },
+  })
+})
+
 test("treats a missing endpoint as an unsupported server capability", async () => {
   expect(
     await readCodexUsage({

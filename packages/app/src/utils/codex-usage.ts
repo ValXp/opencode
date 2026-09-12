@@ -16,7 +16,9 @@ export async function readCodexUsage(input: {
 }) {
   const url = new URL(`${input.server.url.replace(/\/$/, "")}/api/integration/openai/usage`)
   if (input.directory) url.searchParams.set("location[directory]", input.directory)
-  const response = await input.fetch(url.href, {
+  // Native browser fetch must not receive the options object as its receiver.
+  const fetch = input.fetch
+  const response = await fetch(url.href, {
     headers: input.server.password
       ? {
           Authorization: `Basic ${authTokenFromCredentials({ username: input.server.username, password: input.server.password })}`,
