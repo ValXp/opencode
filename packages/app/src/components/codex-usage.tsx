@@ -35,16 +35,18 @@ export function CodexUsageDisplay(props: { state: ReturnType<typeof createShared
     return usage && codexUsageStale(usage, state.now) ? usage.updatedAt : undefined
   }
 
-  const label = () => {
+  const percent = () => {
     const usage = state.usage
-    if (!usage || usage.status === "unknown" || !usage.windows.length)
-      return language.t("settings.providers.codexUsage.compactUnknown")
-    const percent = Math.floor(Math.min(...usage.windows.map((window) => window.remainingPercent)))
+    if (!usage || usage.status === "unknown" || !usage.windows.length) return
+    return Math.floor(Math.min(...usage.windows.map((window) => window.remainingPercent)))
+  }
+  const label = () => {
+    if (percent() === undefined) return language.t("settings.providers.codexUsage.compactUnknown")
     return language.t(
-      codexUsageStale(usage, state.now)
+      state.usage && codexUsageStale(state.usage, state.now)
         ? "settings.providers.codexUsage.compactStale"
         : "settings.providers.codexUsage.compact",
-      { percent },
+      { percent: percent()! },
     )
   }
 
@@ -122,7 +124,11 @@ export function CodexUsageDisplay(props: { state: ReturnType<typeof createShared
               if (event.key === "Escape") setFocus("active", false)
             }}
           >
-            <bdi>{label()}</bdi>
+            <bdi dir="ltr">
+              {percent() === undefined
+                ? language.t("settings.providers.codexUsage.percentUnknown")
+                : language.t("settings.providers.codexUsage.percent", { percent: percent()! })}
+            </bdi>
           </button>
         </Tooltip>
       </Show>

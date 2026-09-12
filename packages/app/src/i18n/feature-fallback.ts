@@ -3,6 +3,8 @@ export const FEATURE_ENGLISH_FALLBACK = {
   "settings.providers.codexUsage.compact": "Codex {{percent}}% remaining",
   "settings.providers.codexUsage.compactStale": "Codex {{percent}}% · stale",
   "settings.providers.codexUsage.compactUnknown": "Codex —",
+  "settings.providers.codexUsage.percent": "{{percent}}%",
+  "settings.providers.codexUsage.percentUnknown": "—",
   "settings.providers.codexUsage.minimum": "Shows the lowest remaining percentage across windows.",
   "settings.providers.codexUsage.lastKnown": "Last known usage · may be out of date",
   "settings.providers.codexUsage.weekly": "{{percent}}% remaining · weekly window",

@@ -48,9 +48,9 @@ test.skipIf(isServer)(
     for (const direction of ["ltr", "rtl"] as const) {
       const view = mount(direction)
       const button = view.host.querySelector("button")!
-      expect(button.textContent).toBe("Codex 58% remaining")
+      expect(button.textContent).toBe("58%")
       expect(button.getAttribute("aria-label")).toBe("Codex 58% remaining")
-      expect(button.querySelector("bdi")).not.toBeNull()
+      expect(button.querySelector("bdi")?.dir).toBe("ltr")
       button.focus()
       expect(document.activeElement).toBe(button)
     }
@@ -75,11 +75,16 @@ test.skipIf(isServer)("most constrained window, stale and unavailable labels, an
       { kind: "secondary", remainingPercent: 24.9, windowSeconds: 604800 },
     ],
   })
-  expect(view.host.textContent).toBe("Codex 24% remaining")
+  expect(view.host.textContent).toBe("24%")
+  expect(view.host.querySelector("button")!.getAttribute("aria-label")).toBe("Codex 24% remaining")
   view.setState("now", 92000)
-  expect(view.host.textContent).toBe("Codex 24% · stale")
+  expect(view.host.textContent).toBe("24%")
+  expect(view.host.querySelector("button")!.getAttribute("aria-label")).toBe("Codex 24% · stale")
   view.setState("usage", { status: "unknown", windows: [] })
-  expect(view.host.textContent).toBe("Codex —")
+  expect(view.host.textContent).toBe("—")
+  expect(view.host.querySelector("button")!.getAttribute("aria-label")).toBe("Codex —")
+  view.setState("usage", { status: "fresh", windows: [{ kind: "primary", remainingPercent: 0, windowSeconds: 18000 }] })
+  expect(view.host.textContent).toBe("0%")
   view.setState("usage", { status: "unsupported", windows: [] })
   expect(view.host.querySelector("button")).toBeNull()
   view.setState("capable", false)
